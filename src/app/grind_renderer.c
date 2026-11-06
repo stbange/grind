@@ -531,6 +531,29 @@ void grind_renderer_draw_frame(GrindRenderer *r, const GrindWorld *world, const 
         }
     }
 
+    /* 5b. Rival Vendor Stand (Devon's Competing Street Stall with Purple/Red Canopy) */
+    if (world->rival_stand_active) {
+        Vec3 rp = world->rival_stand_pos;
+        draw_box_3d(r, vp, vec3_make(rp.x, 0.0f, rp.z), vec3_make(2.4f, 1.05f, 1.4f), 0.0f, (Color4){0.45f, 0.20f, 0.25f, 1.0f});
+        draw_box_3d(r, vp, vec3_make(rp.x, 1.05f, rp.z), vec3_make(0.45f, 0.60f, 0.45f), 0.0f, (Color4){0.95f, 0.55f, 0.18f, 1.0f});
+        draw_box_3d(r, vp, vec3_make(rp.x, 1.05f, rp.z), vec3_make(0.10f, 2.1f, 0.10f), 0.0f, (Color4){0.30f, 0.30f, 0.35f, 1.0f});
+        draw_box_3d(r, vp, vec3_make(rp.x, 3.10f, rp.z), vec3_make(3.2f, 0.35f, 3.2f), 0.0f, (Color4){0.75f, 0.18f, 0.55f, 1.0f});
+    }
+
+    /* 5c. 3D Falling Rain Streaks when Weather is Rainy */
+    if (world->weather == WEATHER_RAINY) {
+        float rain_fall = fmodf(world->anim_time_sec * 14.0f, 8.0f);
+        for (int rx = -3; rx <= 3; ++rx) {
+            for (int rz = -3; rz <= 3; ++rz) {
+                float drop_x = p->pos.x + (float)rx * 3.5f + sinf((float)rz) * 1.2f;
+                float drop_z = p->pos.z + (float)rz * 3.5f + cosf((float)rx) * 1.2f;
+                float drop_y = 8.0f - fmodf(rain_fall + (float)((rx + rz) & 3) * 2.0f, 8.0f);
+                draw_box_3d(r, vp, vec3_make(drop_x, drop_y, drop_z),
+                            vec3_make(0.03f, 0.75f, 0.03f), 0.0f, (Color4){0.70f, 0.82f, 0.96f, 0.75f});
+            }
+        }
+    }
+
     /* 6. Active Courier Parcels & Dropoff Beacons */
     for (int i = 0; i < GRIND_MAX_CONTRACTS; ++i) {
         const GrindCourierContract *c = &world->contracts[i];
@@ -662,12 +685,37 @@ void grind_renderer_draw_frame(GrindRenderer *r, const GrindWorld *world, const 
     }
 
     if (p->stand_deployed) {
-        char stand_tag[64];
-        snprintf(stand_tag, sizeof(stand_tag), "LEMONADE $%.2f (%d CUPS)", p->stand_price, p->stand_lemonade_stock);
+        char stand_tag[96];
+        if (p->unlocked_insights & GRIND_INSIGHT_UNIT_ECONOMICS) {
+            snprintf(stand_tag, sizeof(stand_tag), "LEMONADE $%.2f (COGS $%.2f, MARGIN %.0f%%, %d CUPS)",
+                     p->stand_price, grind_player_unit_cost_per_cup(world),
+                     grind_player_profit_margin_pct(world), p->stand_lemonade_stock);
+        } else {
+            snprintf(stand_tag, sizeof(stand_tag), "LEMONADE $%.2f (%d CUPS)", p->stand_price, p->stand_lemonade_stock);
+        }
         Vec3 sp = vec3_make(p->stand_pos.x, p->owns_storefront ? 5.2f : 4.1f, p->stand_pos.z);
         draw_world_label_2d(sp, vp, vw_i, vh_i, 2.1f,
                             (Color4){0.22f, 0.16f, 0.04f, 0.85f},
                             (Color4){1.0f, 0.92f, 0.25f, 1.0f}, stand_tag);
+    }
+
+    if (world->rival_stand_active) {
+        char rtag[64];
+        snprintf(rtag, sizeof(rtag), "RIVAL STAND $%.2f (QUAL %.0f%%)",
+                 world->rival_stand_price, world->rival_stand_quality * 100.0f);
+        Vec3 rp = vec3_make(world->rival_stand_pos.x, 3.9f, world->rival_stand_pos.z);
+        draw_world_label_2d(rp, vp, vw_i, vh_i, 2.0f,
+                            (Color4){0.32f, 0.06f, 0.22f, 0.86f},
+                            (Color4){1.0f, 0.65f, 0.88f, 1.0f}, rtag);
+    }
+
+    /* Fatigue / High-Stress Visual Grind Warning Border */
+    if (p->stamina < 25.0f || p->stress > 70.0f) {
+        Color4 warn_c = {0.92f, 0.18f, 0.15f, 0.35f};
+        push_quad_2d(0.0f, 0.0f, vw, 8.0f, warn_c);
+        push_quad_2d(0.0f, vh - 8.0f, vw, 8.0f, warn_c);
+        draw_text_2d(vw * 0.5f - 165.0f, vh - 28.0f, 2.3f, (Color4){1.0f, 0.45f, 0.40f, 1.0f},
+                     "GRIND EXHAUSTION! REST [R] OR EAT A MEAL");
     }
 
     if (world->sale_popup_timer > 0.0f) {

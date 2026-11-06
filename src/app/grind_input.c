@@ -219,10 +219,15 @@ void grind_input_apply_to_world(GrindInputState *in, GrindWorld *world, float dt
 Mat4 grind_input_compute_view_matrix(const GrindInputState *in, const GrindWorld *world) {
     const GrindPlayer *p = &world->player;
 
-    /* First-Person eye position with subtle stride head-bob */
+    /* First-Person eye position with subtle stride head-bob + fatigue/stress sway */
     float bob = sinf((p->pos.x + p->pos.z) * 1.4f) * 0.04f;
+    float fatigue_sway = 0.0f;
+    if (p->stamina < 25.0f || p->stress > 70.0f) {
+        fatigue_sway = sinf(world->anim_time_sec * 2.5f) * 0.06f;
+        bob -= (25.0f - fminf(25.0f, p->stamina)) * 0.008f; /* Slumped posture when exhausted */
+    }
     float eye_h = (p->vehicle == VEHICLE_BICYCLE || p->vehicle == VEHICLE_CARGO_EBIKE) ? 1.85f : 1.68f;
-    Vec3 fp_eye = vec3_make(p->pos.x, p->pos.y + eye_h + bob, p->pos.z);
+    Vec3 fp_eye = vec3_make(p->pos.x + fatigue_sway, p->pos.y + eye_h + bob, p->pos.z);
 
     float cos_p = cosf(p->pitch_rad);
     Vec3 fp_dir = vec3_make(

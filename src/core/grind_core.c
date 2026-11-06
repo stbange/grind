@@ -75,6 +75,10 @@ void grind_world_init(GrindWorld *world, uint64_t seed) {
     p->stand_lemonade_quality = 0.70f;
     p->recipe_lemons_per_batch = 1;
     p->recipe_sugar_per_batch = 1;
+    world->rival_stand_active = false;
+    world->rival_stand_pos = vec3_make(9.0f, 0.0f, -6.0f);
+    world->rival_stand_price = 1.45f;
+    world->rival_stand_quality = 0.68f;
     for (int i = 0; i < ITEM_COUNT; ++i) {
         p->item_freshness[i] = 1.0f;
     }
@@ -292,8 +296,11 @@ void grind_player_move(GrindWorld *world, float forward_axis, float strafe_axis,
     if (p->vehicle == VEHICLE_BICYCLE) drain_per_m = 0.018f;
     else if (p->vehicle >= VEHICLE_CARGO_EBIKE) drain_per_m = 0.004f;
 
-    /* Logistics skill reduces physical strain */
+    /* Logistics skill & Route Optimizer insight reduce physical strain */
     drain_per_m *= (1.0f / (1.0f + 0.08f * p->skill_logistics));
+    if (p->unlocked_insights & GRIND_INSIGHT_ROUTE_OPTIMIZER) {
+        drain_per_m *= 0.85f;
+    }
     p->stamina = grind_clampf(p->stamina - dist_m * drain_per_m * load_factor, 0.0f, 100.0f);
 
     /* Moving under load teaches logistics */
@@ -422,11 +429,32 @@ bool grind_action_craft_lemonade(GrindWorld *world, int batches) {
         return false;
     }
     p->stand_lemonade_quality = calc_recipe_quality(world);
+    if (p->skill_production >= 0.20f) {
+        p->unlocked_insights |= GRIND_INSIGHT_UNIT_ECONOMICS;
+    }
     char buf[GRIND_MAX_LOG_LEN];
     snprintf(buf, sizeof(buf), "Crafted %d cups (Recipe %dL/%dS, Quality %.0f%%).",
              crafted * 5, req_lem, req_sug, p->stand_lemonade_quality * 100.0f);
     set_status(world, buf);
     return true;
+}
+
+float grind_player_unit_cost_per_cup(const GrindWorld *world) {
+    const GrindPlayer *p = &world->player;
+    int lem = p->recipe_lemons_per_batch > 0 ? p->recipe_lemons_per_batch : 1;
+    int sug = p->recipe_sugar_per_batch > 0 ? p->recipe_sugar_per_batch : 1;
+    float batch_cost = (float)lem * effective_item_cost(world, ITEM_LEMON) +
+                       (float)sug * effective_item_cost(world, ITEM_SUGAR) +
+                       1.0f * effective_item_cost(world, ITEM_WATER_JUG) +
+                       1.0f * effective_item_cost(world, ITEM_PAPER_CUPS);
+    return batch_cost / 5.0f;
+}
+
+float grind_player_profit_margin_pct(const GrindWorld *world) {
+    float price = world->player.stand_price;
+    if (price <= 0.01f) return 0.0f;
+    float cogs = grind_player_unit_cost_per_cup(world);
+    return ((price - cogs) / price) * 100.0f;
 }
 
 void grind_action_set_lemonade_price(GrindWorld *world, float new_price) {
@@ -544,6 +572,9 @@ bool grind_action_deliver_contract_parcel(GrindWorld *world, int contract_idx) {
     p->deliveries_completed_total++;
     p->skill_logistics = grind_clampf(p->skill_logistics + 0.28f, 0.0f, 10.0f);
     p->business_reputation = grind_clampf(p->business_reputation + 2.5f, 0.0f, 100.0f);
+    if (p->deliveries_completed_total >= 3) {
+        p->unlocked_insights |= GRIND_INSIGHT_ROUTE_OPTIMIZER;
+    }
     world->sale_popup_timer = 2.5f;
     world->sale_popup_pos = vec3_make(c->dropoff_pos.x, 2.8f, c->dropoff_pos.z);
     world->sale_popup_amount = payout;
@@ -711,7 +742,8 @@ bool grind_action_consume_item(GrindWorld *world, GrindItemType type) {
         p->inventory[type]--;
         p->skill_management = grind_clampf(p->skill_management + 1.2f, 0.0f, 10.0f);
         p->skill_persuasion = grind_clampf(p->skill_persuasion + 0.8f, 0.0f, 10.0f);
-        set_status(world, "Studied Business Handbook (+Management & +Persuasion skills)!");
+        p->unlocked_insights |= (GRIND_INSIGHT_UNIT_ECONOMICS | GRIND_INSIGHT_DEMAND_ELASTICITY | GRIND_INSIGHT_COMPETITOR_INTEL);
+        set_status(world, "Studied Business Handbook (+Management, +Persuasion, Unlocked Market Insights)!");
         return true;
     }
     return false;
@@ -1052,6 +1084,14 @@ void grind_world_tick(GrindWorld *world, float sim_minutes) {
     if (world->time_of_day_hours > 18.5f) {
         p->stress = grind_clampf(p->stress + dt_hours * 2.2f, 0.0f, 100.0f);
     }
+    if (world->weather == WEATHER_RAINY && !p->owns_storefront) {
+        p->stress = grind_clampf(p->stress + dt_hours * 1.8f, 0.0f, 100.0f);
+    }
+
+    /* Envious Peer (Devon) opens a competing street stand once player gains traction */
+    if (!world->rival_stand_active && (p->cups_sold_total >= 15 || world->npcs[1].envy >= 0.30f)) {
+        world->rival_stand_active = true;
+    }
     if (p->meal_speed_buff_hours > 0.0f) {
         p->meal_speed_buff_hours = grind_clampf(p->meal_speed_buff_hours - dt_hours, 0.0f, 10.0f);
     }
@@ -1157,7 +1197,12 @@ void grind_world_tick(GrindWorld *world, float sim_minutes) {
             detect_radius += p->marketing_awareness * 22.0f;
             if (vec3_dist_xz(npc->pos, p->stand_pos) <= detect_radius) {
                 float u = grind_eval_customer_utility(world, npc, p->stand_price, p->stand_lemonade_quality);
-                if (u > 0.0f && npc->cash >= p->stand_price) {
+                float u_rival = -10.0f;
+                if (world->rival_stand_active) {
+                    /* Rival has lower brand awareness (-0.12 offset), so fair price or good quality beats rival */
+                    u_rival = grind_eval_customer_utility(world, npc, world->rival_stand_price, world->rival_stand_quality) - 0.12f;
+                }
+                if (u > 0.0f && u >= u_rival && npc->cash >= p->stand_price) {
                     npc->cash -= p->stand_price;
                     npc->thirst = grind_clampf(npc->thirst - 0.65f, 0.0f, 1.0f);
                     npc->drink_timer = 0.8f;
@@ -1165,11 +1210,22 @@ void grind_world_tick(GrindWorld *world, float sim_minutes) {
                     world->revenue_today += p->stand_price;
                     p->stand_lemonade_stock--;
                     p->cups_sold_total++;
+                    if (p->cups_sold_total >= 10) {
+                        p->unlocked_insights |= GRIND_INSIGHT_DEMAND_ELASTICITY;
+                    }
+                    if (p->skill_persuasion >= 0.5f) {
+                        p->unlocked_insights |= GRIND_INSIGHT_COMPETITOR_INTEL;
+                    }
                     p->skill_persuasion = grind_clampf(p->skill_persuasion + 0.03f, 0.0f, 10.0f);
                     p->business_reputation = grind_clampf(p->business_reputation + 0.35f, 0.0f, 100.0f);
                     world->sale_popup_timer = 2.2f;
                     world->sale_popup_pos = vec3_make(p->stand_pos.x, 3.0f, p->stand_pos.z);
                     world->sale_popup_amount = p->stand_price;
+                } else if (world->rival_stand_active && u_rival > 0.0f && u_rival > u) {
+                    /* Customer chose the rival stand because player's price/quality utility was worse! */
+                    npc->thirst = grind_clampf(npc->thirst - 0.55f, 0.0f, 1.0f);
+                    world->rival_cups_sold++;
+                    p->unlocked_insights |= GRIND_INSIGHT_COMPETITOR_INTEL;
                 }
             }
         }

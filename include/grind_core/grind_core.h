@@ -153,6 +153,15 @@ typedef struct {
     float revenue_generated_today;
 } GrindEmployee;
 
+/* Experiential Business Insights unlocked by doing business or studying */
+typedef enum {
+    GRIND_INSIGHT_NONE             = 0,
+    GRIND_INSIGHT_UNIT_ECONOMICS   = (1u << 0), /* Reveals COGS $/cup & profit margin % */
+    GRIND_INSIGHT_DEMAND_ELASTICITY= (1u << 1), /* Reveals weather & price elasticity */
+    GRIND_INSIGHT_ROUTE_OPTIMIZER  = (1u << 2), /* Reveals courier $/kg efficiency & cuts stamina drain */
+    GRIND_INSIGHT_COMPETITOR_INTEL = (1u << 3)  /* Reveals rival vendor pricing & quality */
+} GrindInsightFlags;
+
 /* Player Bio-Energetics, Skills, Inventory & Assets */
 typedef struct {
     Vec3 pos;
@@ -172,11 +181,12 @@ typedef struct {
     float hunger;  /* 0.0 to 100.0 */
     float stress;  /* 0.0 to 100.0 */
 
-    /* First-Principles Experiential Skills (0.0 to 10.0) */
+    /* First-Principles Experiential Skills (0.0 to 10.0) & Unlocked Insights */
     float skill_production;
     float skill_logistics;
     float skill_persuasion;
     float skill_management;
+    uint32_t unlocked_insights;
 
     /* Physical Inventory & Containers */
     int inventory[ITEM_COUNT];
@@ -238,6 +248,13 @@ typedef struct {
     float wages_paid_today;
     float passive_income_today;
 
+    /* Emergent Rival Street Vendor (Devon) when envy/competition triggers */
+    bool rival_stand_active;
+    Vec3 rival_stand_pos;
+    float rival_stand_price;
+    float rival_stand_quality;
+    int rival_cups_sold;
+
     /* 3D visual animation clock & floating +$ sale popup state */
     float anim_time_sec;
     float sale_popup_timer;
@@ -268,6 +285,8 @@ bool grind_action_craft_lemonade(GrindWorld *world, int batches);
 void grind_action_set_lemonade_price(GrindWorld *world, float new_price);
 void grind_action_adjust_price(GrindWorld *world, float delta);
 void grind_action_set_recipe(GrindWorld *world, int lemons_per_batch, int sugar_per_batch);
+float grind_player_unit_cost_per_cup(const GrindWorld *world);
+float grind_player_profit_margin_pct(const GrindWorld *world);
 float grind_eval_customer_utility(const GrindWorld *world, const GrindNpc *npc, float price, float quality);
 
 /* Logistics & Courier Actions */

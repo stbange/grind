@@ -92,6 +92,27 @@ static void test_economy_and_crafting(void) {
     float q_rich = w.player.stand_lemonade_quality;
     ASSERT_TRUE(q_rich > q_basic, "Richer 2-lemon/2-sugar recipe increases lemonade quality");
 
+    /* Verify experiential business insights (Unit Economics COGS & Gross Margin) */
+    ASSERT_TRUE((w.player.unlocked_insights & GRIND_INSIGHT_UNIT_ECONOMICS) != 0,
+                "Crafting batches unlocks Unit Economics insight");
+    float cogs = grind_player_unit_cost_per_cup(&w);
+    float margin = grind_player_profit_margin_pct(&w);
+    ASSERT_TRUE(cogs > 0.15f && cogs < 1.20f, "First-principles COGS per cup is positive and bounded");
+    ASSERT_TRUE(margin > 20.0f, "Gross profit margin percentage is positive at default price");
+
+    /* Verify Rival Stand competition: if rival is active and player price-gouges, rival wins customer */
+    w.rival_stand_active = true;
+    w.player.stand_pos = vec3_make(0.0f, 0.0f, 0.0f);
+    w.npcs[6].pos = vec3_make(1.0f, 0.0f, 1.0f);
+    w.npcs[6].thirst = 0.90f;
+    grind_action_set_lemonade_price(&w, 9.50f); /* Gouge price so customer prefers rival ($1.45) */
+    int rival_before = w.rival_cups_sold;
+    grind_world_tick(&w, 5.0f);
+    ASSERT_TRUE(w.rival_cups_sold > rival_before, "Customers defect to Rival Stand when player price-gouges");
+    ASSERT_TRUE((w.player.unlocked_insights & GRIND_INSIGHT_COMPETITOR_INTEL) != 0,
+                "Losing a sale to a competitor unlocks Competitor Intel insight");
+    grind_action_set_lemonade_price(&w, 1.60f);
+
     GrindNpc *customer = &w.npcs[5];
     customer->thirst = 0.85f;
     w.ambient_temp_c = 30.0f;

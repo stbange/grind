@@ -10,12 +10,14 @@ The player tracks:
 - `hunger` (`0.0` to `100.0`): Rises over time and with physical exertion.
 - `stress` (`0.0` to `100.0`): Rises from long working hours (`>10 hours/day`), rain exposure, envious social hostility, and sleeping in a noisy tenement. High stress (`>75`) penalizes negotiation and employee management.
 
-### REQ-BIO-002: Learning by Doing (First-Principles Skill Growth)
+### REQ-BIO-002: Learning by Doing (First-Principles Skill Growth & Insights)
 The player has four continuous skills (`0.0` to `10.0`):
 1. `skill_production`: Grows every time the player crafts goods (increases product quality and reduces waste).
 2. `skill_logistics`: Grows per kilometer traveled under load and per on-time courier delivery (reduces stamina drain and unlocks complex multi-stop routes).
 3. `skill_persuasion`: Grows per customer sale, NPC conversation, and marketing campaign (improves customer purchase utility and B2B terms).
 4. `skill_management`: Grows by supervising employees, auditing books, and studying business books/courses (boosts employee efficiency and unlocks larger team capacities).
+
+As the player practices business or studies handbooks, they unlock **Experiential Business Insights** (`GRIND_INSIGHT_UNIT_ECONOMICS`, `GRIND_INSIGHT_DEMAND_ELASTICITY`, `GRIND_INSIGHT_ROUTE_OPTIMIZER`, `GRIND_INSIGHT_COMPETITOR_INTEL`), revealing unit COGS, profit margins, and rival vendor intelligence.
 
 ## 3. Personal Rewards ("The Good Things in Life")
 ### REQ-BIO-003: Lifestyle & Personal Purchases
