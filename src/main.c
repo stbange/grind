@@ -99,9 +99,20 @@ static void process_events(GrindApp *app) {
                     float nx = (float)ev.button.x / (float)app->input.viewport_w;
                     float ny = (float)ev.button.y / (float)app->input.viewport_h;
                     grind_input_on_touch_down(&app->input, 999, nx, ny);
-                } else if (ev.button.button == SDL_BUTTON_RIGHT) {
-                    app->mouse_captured = !app->mouse_captured;
+                } else if (ev.button.button == SDL_BUTTON_LEFT || ev.button.button == SDL_BUTTON_RIGHT) {
+                    if (ev.button.button == SDL_BUTTON_RIGHT) {
+                        app->mouse_captured = !app->mouse_captured;
+                    } else {
+                        app->mouse_captured = true;
+                    }
                     SDL_SetRelativeMouseMode(app->mouse_captured ? SDL_TRUE : SDL_FALSE);
+#ifdef __EMSCRIPTEN__
+                    if (app->mouse_captured) {
+                        emscripten_request_pointerlock("#canvas", 1);
+                    } else {
+                        emscripten_exit_pointerlock();
+                    }
+#endif
                 }
                 break;
             case SDL_MOUSEBUTTONUP:
@@ -118,7 +129,7 @@ static void process_events(GrindApp *app) {
                     float dx = (float)ev.motion.xrel / (float)app->input.viewport_w;
                     float dy = (float)ev.motion.yrel / (float)app->input.viewport_h;
                     grind_input_on_touch_motion(&app->input, 999, nx, ny, dx, dy);
-                } else if (app->mouse_captured || (ev.motion.state & SDL_BUTTON_RMASK)) {
+                } else if (app->mouse_captured || (ev.motion.state & (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK))) {
                     app->input.look_yaw_delta += (float)ev.motion.xrel * 0.0035f;
                     app->input.look_pitch_delta -= (float)ev.motion.yrel * 0.0030f;
                 }

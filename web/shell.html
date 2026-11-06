@@ -34,6 +34,15 @@
           alert('WebGL context lost. Please reload the page.');
           e.preventDefault();
         }, false);
+        /* Capture mouse via HTML5 Pointer Lock on left/right click when on desktop viewports */
+        canvas.addEventListener("mousedown", function(e) {
+          canvas.focus();
+          if (window.innerWidth >= 900 && !('ontouchstart' in window)) {
+            if (document.pointerLockElement !== canvas && canvas.requestPointerLock) {
+              canvas.requestPointerLock();
+            }
+          }
+        }, false);
         return canvas;
       })()
     };

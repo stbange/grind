@@ -38,7 +38,9 @@ static void test_physics_and_containers(void) {
     GrindWorld w;
     grind_world_init(&w, 42ULL);
 
-    /* Bare hands start with 6kg mass / 5L volume capacity */
+    /* Bare hands start with 6kg mass / 5L volume capacity, and city is densely populated */
+    ASSERT_TRUE(w.building_count >= 55, "Procedural city generator spawns a dense skyline (>= 55 buildings)");
+    ASSERT_TRUE(w.tree_count >= 30, "Procedural city generator scatters street & park trees (>= 30 trees)");
     ASSERT_NEAR(grind_player_max_mass_kg(&w), 6.0f, 0.01f, "Initial bare-hand mass limit");
     ASSERT_NEAR(grind_player_max_volume_l(&w), 5.0f, 0.01f, "Initial bare-hand volume limit");
 

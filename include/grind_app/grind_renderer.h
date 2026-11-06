@@ -11,6 +11,12 @@ typedef struct {
     unsigned int vbo_cube;
     int cube_vertex_count;
 
+    unsigned int vao_quad;
+    unsigned int vbo_quad;
+
+    unsigned int tex_city;
+    unsigned int tex_sprites;
+
     unsigned int vao_2d;
     unsigned int vbo_2d;
 
@@ -19,6 +25,9 @@ typedef struct {
     int u_color_3d;
     int u_light_dir_3d;
     int u_ambient_3d;
+    int u_uv_rect_3d;
+    int u_tex_mode_3d;
+    int u_tex_3d;
 
     int u_res_2d;
     bool initialized;

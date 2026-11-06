@@ -84,32 +84,89 @@ void grind_world_init(GrindWorld *world, uint64_t seed) {
         p->item_freshness[i] = 1.0f;
     }
 
-    /* Initialize City Landmarks / Zones */
+    /* Initialize 7 Primary City Landmarks / Zones */
     const GrindBuilding b_init[ZONE_COUNT] = {
-        {ZONE_TENEMENT_ALLEY,   "Tenement Alley (Home)",    {-58.0f, 0.0f, -55.0f}, {14.0f, 11.0f, 12.0f}, {0.42f, 0.36f, 0.33f, 1.0f}},
-        {ZONE_WHOLESALE_MARKET, "Wholesale Fresh Market",   {-32.0f, 0.0f, -12.0f}, {18.0f,  8.5f, 14.0f}, {0.25f, 0.62f, 0.35f, 1.0f}},
-        {ZONE_CENTRAL_PLAZA,    "Central Sunny Plaza",      {  0.0f, 0.0f,   0.0f}, {16.0f,  2.5f, 16.0f}, {0.82f, 0.76f, 0.55f, 1.0f}},
-        {ZONE_BIKE_VEHICLE_SHOP,"Metro Bike & Auto Works",  { 38.0f, 0.0f, -18.0f}, {16.0f,  9.0f, 14.0f}, {0.22f, 0.48f, 0.78f, 1.0f}},
-        {ZONE_DISPATCH_HUB,     "City Courier Dispatch",    { 32.0f, 0.0f,  34.0f}, {18.0f, 10.0f, 14.0f}, {0.88f, 0.56f, 0.18f, 1.0f}},
-        {ZONE_BANK_FINANCE,     "First National Bank",      {-12.0f, 0.0f,  48.0f}, {20.0f, 22.0f, 16.0f}, {0.35f, 0.42f, 0.52f, 1.0f}},
-        {ZONE_BOUTIQUE_LUXURY,  "Grand Luxe & Penthouse",   { 52.0f, 0.0f,  52.0f}, {20.0f, 26.0f, 18.0f}, {0.72f, 0.30f, 0.68f, 1.0f}}
+        {ZONE_TENEMENT_ALLEY,   "Tenement Alley (Home)",    {-58.0f, 0.0f, -55.0f}, {11.0f, 12.0f, 10.0f}, {0.72f, 0.42f, 0.36f, 1.0f}, 0},
+        {ZONE_WHOLESALE_MARKET, "Wholesale Fresh Market",   {-32.0f, 0.0f, -12.0f}, {13.0f,  9.5f, 11.0f}, {0.35f, 0.78f, 0.45f, 1.0f}, 2},
+        {ZONE_CENTRAL_PLAZA,    "Central Sunny Plaza",      {  0.0f, 0.0f,   0.0f}, { 9.0f,  3.2f,  9.0f}, {0.92f, 0.86f, 0.65f, 1.0f}, 2},
+        {ZONE_BIKE_VEHICLE_SHOP,"Metro Bike & Auto Works",  { 38.0f, 0.0f, -18.0f}, {13.0f, 10.0f, 11.0f}, {0.32f, 0.62f, 0.92f, 1.0f}, 3},
+        {ZONE_DISPATCH_HUB,     "City Courier Dispatch",    { 32.0f, 0.0f,  34.0f}, {14.0f, 11.5f, 11.0f}, {0.94f, 0.64f, 0.24f, 1.0f}, 3},
+        {ZONE_BANK_FINANCE,     "First National Bank",      {-12.0f, 0.0f,  48.0f}, {14.0f, 25.0f, 12.0f}, {0.55f, 0.68f, 0.82f, 1.0f}, 1},
+        {ZONE_BOUTIQUE_LUXURY,  "Grand Luxe & Penthouse",   { 52.0f, 0.0f,  52.0f}, {15.0f, 28.0f, 13.0f}, {0.88f, 0.48f, 0.82f, 1.0f}, 1}
     };
     memcpy(world->buildings, b_init, sizeof(b_init));
     world->building_count = ZONE_COUNT;
 
-    /* Decorative background city blocks for 3D depth */
-    const Vec3 deco_pos[] = {
-        {-85.0f, 0.0f, -20.0f}, {-85.0f, 0.0f,  25.0f}, {-55.0f, 0.0f,  45.0f},
-        { -5.0f, 0.0f, -65.0f}, { 45.0f, 0.0f, -60.0f}, { 80.0f, 0.0f, -10.0f},
-        { 82.0f, 0.0f,  30.0f}, { 15.0f, 0.0f,  78.0f}, {-40.0f, 0.0f,  80.0f}
-    };
-    for (int i = 0; i < 9 && world->building_count < GRIND_MAX_BUILDINGS; ++i) {
-        GrindBuilding *b = &world->buildings[world->building_count++];
-        b->zone = ZONE_CENTRAL_PLAZA;
-        b->name = "City Block";
-        b->pos = deco_pos[i];
-        b->size = vec3_make(16.0f, 14.0f + (i % 4) * 5.0f, 16.0f);
-        b->color = (Color4){0.45f, 0.48f, 0.54f, 1.0f};
+    /* Procedurally generate a dense, walkable urban skyline of ~80 additional city buildings */
+    GrindRng city_rng;
+    grind_rng_seed(&city_rng, (seed ? seed : 0xC0FFEE123456ULL) ^ 0xA5A55A5AULL);
+
+    for (int gx = -96; gx <= 96 && world->building_count < GRIND_MAX_BUILDINGS; gx += 16) {
+        for (int gz = -96; gz <= 96 && world->building_count < GRIND_MAX_BUILDINGS; gz += 16) {
+            float bx = (float)gx + grind_rng_range(&city_rng, -1.8f, 1.8f);
+            float bz = (float)gz + grind_rng_range(&city_rng, -1.8f, 1.8f);
+
+            /* Keep main avenues (X = ±22, Z = ±26) and Central Plaza clear for fast bike/van routing */
+            if (fabsf(bx - 22.0f) < 9.5f || fabsf(bx + 22.0f) < 9.5f) continue;
+            if (fabsf(bz - 26.0f) < 9.5f || fabsf(bz + 26.0f) < 9.5f) continue;
+            if (fabsf(bx) < 16.0f && fabsf(bz) < 16.0f) continue;
+
+            /* Keep player spawn, found money, and luxury courtyard clear */
+            Vec3 cand = vec3_make(bx, 0.0f, bz);
+            if (vec3_dist_xz(cand, world->player.pos) < 10.0f) continue;
+            if (vec3_dist_xz(cand, world->ground_money_pos) < 9.0f) continue;
+            if (vec3_dist_xz(cand, vec3_make(45.0f, 0.0f, 39.0f)) < 11.0f) continue;
+
+            /* Avoid overlapping the 7 key landmark buildings and their front entrances */
+            bool overlaps = false;
+            for (int k = 0; k < ZONE_COUNT; ++k) {
+                if (vec3_dist_xz(cand, world->buildings[k].pos) < 15.5f) {
+                    overlaps = true;
+                    break;
+                }
+            }
+            if (overlaps) continue;
+
+            GrindBuilding *b = &world->buildings[world->building_count++];
+            b->zone = ZONE_CENTRAL_PLAZA;
+            b->name = "City Block";
+            b->pos = cand;
+            float w = grind_rng_range(&city_rng, 7.5f, 10.8f);
+            float d = grind_rng_range(&city_rng, 7.5f, 10.8f);
+            /* Taller skyscrapers downtown, mid-rise tenements on outskirts */
+            float dist_center = sqrtf(bx * bx + bz * bz);
+            float max_h = (dist_center < 55.0f) ? 34.0f : 20.0f;
+            float h = grind_rng_range(&city_rng, 8.5f, max_h);
+            b->size = vec3_make(w, h, d);
+            b->tex_tile = (int)(grind_rng_u32(&city_rng) % 4); /* Facade tile 0..3 in top row of city_atlas */
+
+            float tint = grind_rng_range(&city_rng, 0.72f, 1.0f);
+            if (b->tex_tile == 0)      b->color = (Color4){0.88f * tint, 0.54f * tint, 0.46f * tint, 1.0f}; /* Brick */
+            else if (b->tex_tile == 1) b->color = (Color4){0.58f * tint, 0.74f * tint, 0.92f * tint, 1.0f}; /* Glass office */
+            else if (b->tex_tile == 2) b->color = (Color4){0.86f * tint, 0.78f * tint, 0.62f * tint, 1.0f}; /* Sandstone shop */
+            else                       b->color = (Color4){0.68f * tint, 0.70f * tint, 0.74f * tint, 1.0f}; /* Concrete loft */
+        }
+    }
+
+    /* Procedurally scatter 48 street & park trees along avenues and plazas */
+    world->tree_count = 0;
+    for (int t = 0; t < 160 && world->tree_count < GRIND_MAX_TREES; ++t) {
+        float tx = grind_rng_range(&city_rng, -92.0f, 92.0f);
+        float tz = grind_rng_range(&city_rng, -92.0f, 92.0f);
+        Vec3 tp = vec3_make(tx, 0.0f, tz);
+        if (vec3_dist_xz(tp, world->player.pos) < 6.0f) continue;
+        bool hit_b = false;
+        for (int bi = 0; bi < world->building_count; ++bi) {
+            const GrindBuilding *b = &world->buildings[bi];
+            if (fabsf(tx - b->pos.x) < (b->size.x * 0.5f + 2.2f) &&
+                fabsf(tz - b->pos.z) < (b->size.z * 0.5f + 2.2f)) {
+                hit_b = true;
+                break;
+            }
+        }
+        if (!hit_b) {
+            world->tree_positions[world->tree_count++] = tp;
+        }
     }
 
     /* Named Social Circle NPCs + General Citizens */
@@ -288,8 +345,23 @@ void grind_player_move(GrindWorld *world, float forward_axis, float strafe_axis,
     }
 
     Vec3 delta = vec3_scale(dir, speed * dt_sec);
-    p->pos.x = grind_clampf(p->pos.x + delta.x, -110.0f, 110.0f);
-    p->pos.z = grind_clampf(p->pos.z + delta.z, -110.0f, 110.0f);
+    float next_x = grind_clampf(p->pos.x + delta.x, -110.0f, 110.0f);
+    float next_z = grind_clampf(p->pos.z + delta.z, -110.0f, 110.0f);
+
+    /* Resolve AABB collision against decorative city blocks (index >= ZONE_COUNT) so streets feel solid */
+    for (int bi = ZONE_COUNT; bi < world->building_count; ++bi) {
+        const GrindBuilding *b = &world->buildings[bi];
+        float hx = b->size.x * 0.5f + 0.65f;
+        float hz = b->size.z * 0.5f + 0.65f;
+        if (fabsf(next_x - b->pos.x) < hx && fabsf(next_z - b->pos.z) < hz) {
+            /* Slide along X or Z axis */
+            if (fabsf(p->pos.x - b->pos.x) >= hx) next_x = p->pos.x;
+            else if (fabsf(p->pos.z - b->pos.z) >= hz) next_z = p->pos.z;
+            else { next_x = p->pos.x; next_z = p->pos.z; }
+        }
+    }
+    p->pos.x = next_x;
+    p->pos.z = next_z;
 
     float dist_m = vec3_len(delta);
     float load_factor = 1.0f + (grind_player_carried_mass_kg(world) / grind_player_max_mass_kg(world));

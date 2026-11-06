@@ -4,10 +4,11 @@
 #include "grind_core/grind_math.h"
 #include <stddef.h>
 
-#define GRIND_MAX_NPCS 32
+#define GRIND_MAX_NPCS 36
 #define GRIND_MAX_CONTRACTS 12
 #define GRIND_MAX_EMPLOYEES 8
-#define GRIND_MAX_BUILDINGS 16
+#define GRIND_MAX_BUILDINGS 96
+#define GRIND_MAX_TREES 64
 #define GRIND_MAX_LOG_LEN 128
 
 /* Weather states affecting foot traffic, thirst, and courier demand */
@@ -81,6 +82,7 @@ typedef struct {
     Vec3 pos;
     Vec3 size;
     Color4 color;
+    int tex_tile; /* Index [0..15] in the 4x4 city_atlas texture sheet */
 } GrindBuilding;
 
 /* Physical Courier Parcel Contract */
@@ -244,6 +246,8 @@ typedef struct {
     GrindPlayer player;
     GrindBuilding buildings[GRIND_MAX_BUILDINGS];
     int building_count;
+    Vec3 tree_positions[GRIND_MAX_TREES];
+    int tree_count;
 
     GrindNpc npcs[GRIND_MAX_NPCS];
     int npc_count;
