@@ -1,5 +1,6 @@
 #include "grind_core/grind_core.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const GrindItemDef k_item_defs[ITEM_COUNT] = {
