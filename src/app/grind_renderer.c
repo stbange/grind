@@ -417,6 +417,44 @@ static void draw_bicycle_3d(const GrindRenderer *r, Mat4 vp, Vec3 pos, float yaw
                    (Color4){0.62f, 0.42f, 0.22f, 1.0f});
 }
 
+/* Draws a sleek 3D Personal Sports Coupe ("The Good Things in Life") */
+static void draw_sports_car_3d(const GrindRenderer *r, Mat4 vp, Vec3 pos, float yaw_rad) {
+    Mat4 root = mat4_mul(mat4_translate(pos), mat4_rotate_y(yaw_rad));
+    Color4 red_paint = {0.92f, 0.14f, 0.18f, 1.0f};
+    Color4 glass_col = {0.16f, 0.22f, 0.32f, 1.0f};
+    Color4 tire_col  = {0.12f, 0.13f, 0.15f, 1.0f};
+    /* 4 Wide Low-Profile Wheels */
+    draw_child_box(r, vp, root, vec3_make(-0.95f, 0.0f, -1.25f), vec3_make(0,0,0), vec3_make(0.32f, 0.65f, 0.65f), tire_col);
+    draw_child_box(r, vp, root, vec3_make( 0.95f, 0.0f, -1.25f), vec3_make(0,0,0), vec3_make(0.32f, 0.65f, 0.65f), tire_col);
+    draw_child_box(r, vp, root, vec3_make(-0.95f, 0.0f,  1.25f), vec3_make(0,0,0), vec3_make(0.32f, 0.65f, 0.65f), tire_col);
+    draw_child_box(r, vp, root, vec3_make( 0.95f, 0.0f,  1.25f), vec3_make(0,0,0), vec3_make(0.32f, 0.65f, 0.65f), tire_col);
+    /* Lower Aerodynamic Chassis */
+    draw_child_box(r, vp, root, vec3_make(0.0f, 0.22f, 0.0f), vec3_make(0,0,0), vec3_make(1.95f, 0.58f, 3.8f), red_paint);
+    /* Cabin Greenhouse */
+    draw_child_box(r, vp, root, vec3_make(0.0f, 0.78f, 0.15f), vec3_make(0,0,0), vec3_make(1.55f, 0.48f, 1.85f), glass_col);
+    /* Rear Carbon Wing Spoiler */
+    draw_child_box(r, vp, root, vec3_make(0.0f, 0.92f, 1.72f), vec3_make(0,0,0), vec3_make(1.85f, 0.08f, 0.35f), tire_col);
+}
+
+/* Draws the player's 3D Personal Lifestyle Courtyard (Tenement Crates -> Studio Patio -> Penthouse Pool & Villa) */
+static void draw_lifestyle_courtyard(const GrindRenderer *r, Mat4 vp, const GrindPlayer *p) {
+    /* Luxury Penthouse Terrace & Private Pool at Grand Luxe (42, 0, 38) */
+    Vec3 terrace = vec3_make(48.0f, 0.0f, 37.0f);
+    if (p->housing == HOUSING_PENTHOUSE_VILLA) {
+        /* Marble Pool Deck + Glowing Turquoise Swimming Pool + Sun Loungers */
+        draw_box_3d(r, vp, terrace, vec3_make(12.0f, 0.25f, 9.0f), 0.0f, (Color4){0.92f, 0.90f, 0.86f, 1.0f});
+        draw_box_3d(r, vp, vec3_make(terrace.x, 0.26f, terrace.z), vec3_make(7.5f, 0.08f, 4.8f), 0.0f, (Color4){0.12f, 0.85f, 0.92f, 1.0f});
+        draw_box_3d(r, vp, vec3_make(terrace.x - 4.5f, 0.26f, terrace.z - 1.5f), vec3_make(1.2f, 0.35f, 2.2f), 0.0f, (Color4){0.98f, 0.82f, 0.22f, 1.0f});
+        draw_box_3d(r, vp, vec3_make(terrace.x - 4.5f, 0.26f, terrace.z + 1.5f), vec3_make(1.2f, 0.35f, 2.2f), 0.0f, (Color4){0.98f, 0.82f, 0.22f, 1.0f});
+    } else if (p->housing == HOUSING_STUDIO_APT) {
+        draw_box_3d(r, vp, terrace, vec3_make(7.0f, 0.18f, 6.0f), 0.0f, (Color4){0.72f, 0.65f, 0.55f, 1.0f});
+        draw_box_3d(r, vp, vec3_make(terrace.x, 0.18f, terrace.z), vec3_make(1.6f, 0.85f, 1.6f), 0.0f, (Color4){0.92f, 0.92f, 0.95f, 1.0f});
+    }
+
+    /* Showroom / Driveway Sports Coupe outside Grand Luxe */
+    draw_sports_car_3d(r, vp, vec3_make(40.0f, 0.0f, 42.0f), 0.45f);
+}
+
 void grind_renderer_draw_frame(GrindRenderer *r, const GrindWorld *world, const GrindInputState *input) {
     if (!r->initialized) return;
 
@@ -495,6 +533,7 @@ void grind_renderer_draw_frame(GrindRenderer *r, const GrindWorld *world, const 
 
     draw_bicycle_3d(r, vp, vec3_make(34.0f, 0.0f, -10.0f), 0.5f, (Color4){0.18f, 0.72f, 0.92f, 1.0f});
     draw_bicycle_3d(r, vp, vec3_make(37.0f, 0.0f, -10.0f), 0.5f, (Color4){0.92f, 0.32f, 0.25f, 1.0f});
+    draw_lifestyle_courtyard(r, vp, &world->player);
 
     /* 4. Found Money on Ground (Spinning/Bobbing Green Cash Bundle + Golden Beacon) */
     if (world->ground_money_available) {

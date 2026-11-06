@@ -23,7 +23,7 @@ Each named NPC in the player's social circle maintains:
 1. **Childhood Friend / Mentor (`ARCHETYPE_LOYAL_FRIEND`, e.g., "Marcus"):**
    - High baseline `affection`. Happy when the player succeeds (`respect` rises with wealth), but loses `affection` if the player completely neglects social conversation or treats people arrogantly while flaunting luxury. Offers helpful market tips early on.
 2. **Envious Peer / Rival (`ARCHETYPE_ENVIOUS_PEER`, e.g., "Devon"):**
-   - Friendly when the player is broke (`perceived_wealth < 10`). As `perceived_wealth` climbs past `25`, `envy` rises sharply (`+0.02` per wealth point), causing snide remarks, attempts to undercut prices, or spreading rumors unless the player either keeps a modest profile or hires/collaborates with them.
+   - Friendly when the player is broke (`perceived_wealth < 10`). As `perceived_wealth` climbs past `25`, `envy` rises sharply (`+0.02` per wealth point), causing snide remarks and opening a competing street stand unless the player offers a profit-sharing franchise partnership via `grind_action_social_choice`.
 3. **Opportunist / Hanger-On (`ARCHETYPE_OPPORTUNIST`, e.g., "Chloe"):**
    - Cold and dismissive when `perceived_wealth < 15` (`affection = -0.2`). Once the player wears a tailored suit, buys a sports car, or runs a storefront (`perceived_wealth > 40`), displayed `affection` spikes to `+0.85` while `trust` remains low—approaching the player for "can't-miss" cash handouts or favors.
 4. **Institutional Gatekeeper (`ARCHETYPE_BANKER`, e.g., "Director Vance"):**

@@ -153,6 +153,15 @@ typedef struct {
     float revenue_generated_today;
 } GrindEmployee;
 
+/* Procedural Audio Event Flags */
+typedef enum {
+    GRIND_SFX_NONE    = 0,
+    GRIND_SFX_COIN    = (1u << 0),
+    GRIND_SFX_SALE    = (1u << 1),
+    GRIND_SFX_CRAFT   = (1u << 2),
+    GRIND_SFX_UPGRADE = (1u << 3)
+} GrindSfxFlags;
+
 /* Experiential Business Insights unlocked by doing business or studying */
 typedef enum {
     GRIND_INSIGHT_NONE             = 0,
@@ -250,10 +259,14 @@ typedef struct {
 
     /* Emergent Rival Street Vendor (Devon) when envy/competition triggers */
     bool rival_stand_active;
+    bool rival_allied_franchise;
     Vec3 rival_stand_pos;
     float rival_stand_price;
     float rival_stand_quality;
     int rival_cups_sold;
+
+    /* Procedural sound events triggered since last audio poll */
+    uint32_t sound_events_mask;
 
     /* 3D visual animation clock & floating +$ sale popup state */
     float anim_time_sec;
@@ -313,6 +326,7 @@ bool grind_action_buy_luxury_watch(GrindWorld *world);
 bool grind_action_upgrade_housing(GrindWorld *world, GrindHousingTier tier);
 void grind_action_sleep_overnight(GrindWorld *world);
 bool grind_action_talk_to_npc(GrindWorld *world, int npc_idx);
+bool grind_action_social_choice(GrindWorld *world, int npc_idx, int choice_id);
 bool grind_action_context_interact(GrindWorld *world);
 
 /* Social & Wealth Metrics */

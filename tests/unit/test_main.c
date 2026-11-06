@@ -175,6 +175,19 @@ static void test_social_and_lifestyle(void) {
     ASSERT_TRUE(w.npcs[2].affection > chloe_aff_broke + 0.80f, "Opportunist NPC's affection spikes when player is rich");
     ASSERT_TRUE(w.npcs[3].respect > banker_resp_broke + 0.35f, "Banker respect increases with visible status");
     ASSERT_TRUE(grind_action_request_bank_loan(&w, 500.0f), "Banker approves B2B loan for high-status player");
+
+    /* Verify Step 4 Social Choices: Partnering with Envious Peer (Devon) converts Rival Stand to Allied Franchise */
+    ASSERT_TRUE(grind_action_social_choice(&w, 1, 1), "Partnering with Devon succeeds");
+    ASSERT_TRUE(w.rival_allied_franchise, "Devon's rival stand is now an Allied Franchise");
+    ASSERT_TRUE(w.npcs[1].envy < 0.15f && w.npcs[1].affection > 0.65f,
+                "Franchise partnership resolves Devon's envy and restores friendship");
+
+    /* Verify setting boundaries with Opportunist (Chloe) reduces stress without losing cash */
+    w.player.stress = 50.0f;
+    float cash_pre_chloe = w.player.cash;
+    ASSERT_TRUE(grind_action_social_choice(&w, 2, 1), "Setting firm boundary with Chloe succeeds");
+    ASSERT_NEAR(w.player.cash, cash_pre_chloe, 0.01f, "Declining Chloe's handout costs $0");
+    ASSERT_TRUE(w.player.stress < 45.0f, "Setting boundary reduces player stress");
 }
 
 /* 5. Test First-Person + Top-Down Map camera & automatic small-device on-screen touch controls */

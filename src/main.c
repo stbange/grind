@@ -14,6 +14,10 @@
 typedef struct {
     SDL_Window *window;
     SDL_GLContext gl_ctx;
+    SDL_AudioDeviceID audio_dev;
+    float sfx_freq_hz;
+    float sfx_phase;
+    int sfx_samples_remaining;
     GrindWorld world;
     GrindInputState input;
     GrindRenderer renderer;
@@ -22,6 +26,48 @@ typedef struct {
     int max_frames;
     int frame_count;
 } GrindApp;
+
+/* Zero-Asset Procedural Audio Synthesizer Callback (Coins, Sales Chimes, Crafting & Luxury Upgrades) */
+static void audio_synth_callback(void *userdata, Uint8 *stream, int len) {
+    GrindApp *app = (GrindApp *)userdata;
+    int16_t *samples = (int16_t *)stream;
+    int count = len / (int)sizeof(int16_t);
+    for (int i = 0; i < count; ++i) {
+        if (app->sfx_samples_remaining > 0) {
+            float env = (float)app->sfx_samples_remaining / 6000.0f;
+            if (env > 1.0f) env = 1.0f;
+            float wave = sinf(app->sfx_phase * 2.0f * GRIND_PI);
+            /* Add harmonic overtone for bright cash-register / coin chime */
+            wave = 0.65f * wave + 0.35f * sinf(app->sfx_phase * 4.0f * GRIND_PI);
+            samples[i] = (int16_t)(wave * env * 4200.0f);
+            app->sfx_phase += app->sfx_freq_hz / 44100.0f;
+            if (app->sfx_phase > 1.0f) app->sfx_phase -= 1.0f;
+            app->sfx_samples_remaining--;
+        } else {
+            samples[i] = 0;
+        }
+    }
+}
+
+static void dispatch_sound_events(GrindApp *app) {
+    uint32_t mask = app->world.sound_events_mask;
+    if (mask == 0) return;
+    app->world.sound_events_mask = 0;
+    if (app->audio_dev == 0) return;
+
+    SDL_LockAudioDevice(app->audio_dev);
+    if (mask & GRIND_SFX_UPGRADE) {
+        app->sfx_freq_hz = 880.0f; /* High A5 fanfare chime */
+        app->sfx_samples_remaining = 9000;
+    } else if (mask & (GRIND_SFX_COIN | GRIND_SFX_SALE)) {
+        app->sfx_freq_hz = 1046.5f; /* C6 cash-register chime */
+        app->sfx_samples_remaining = 5500;
+    } else if (mask & GRIND_SFX_CRAFT) {
+        app->sfx_freq_hz = 523.25f; /* C5 craft pour tone */
+        app->sfx_samples_remaining = 4000;
+    }
+    SDL_UnlockAudioDevice(app->audio_dev);
+}
 
 static void process_events(GrindApp *app) {
     grind_input_begin_frame(&app->input);
@@ -152,6 +198,7 @@ static void step_frame(void *userdata) {
 
     /* 1 real second = 8 simulated minutes during interactive play */
     grind_world_tick(&app->world, dt_sec * 8.0f);
+    dispatch_sound_events(app);
 
     grind_renderer_draw_frame(&app->renderer, &app->world, &app->input);
     SDL_GL_SwapWindow(app->window);
@@ -184,9 +231,12 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) != 0) {
-        fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
-        return 1;
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER | SDL_INIT_EVENTS) != 0) {
+        /* Fallback to video-only if headless runner has no audio device */
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) != 0) {
+            fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
+            return 1;
+        }
     }
 
 #ifdef __EMSCRIPTEN__
@@ -229,6 +279,19 @@ int main(int argc, char **argv) {
     grind_world_init(&app.world, 0xC0FFEE123456ULL);
     grind_input_init(&app.input, win_w, win_h, force_touch);
     grind_renderer_init(&app.renderer);
+
+    SDL_AudioSpec want = {0}, have = {0};
+    want.freq = 44100;
+    want.format = AUDIO_S16SYS;
+    want.channels = 1;
+    want.samples = 1024;
+    want.callback = audio_synth_callback;
+    want.userdata = &app;
+    app.audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+    if (app.audio_dev != 0) {
+        SDL_PauseAudioDevice(app.audio_dev, 0);
+    }
+
     app.last_ticks = SDL_GetTicks();
 
 #ifdef __EMSCRIPTEN__
@@ -239,6 +302,9 @@ int main(int argc, char **argv) {
     }
 #endif
 
+    if (app.audio_dev != 0) {
+        SDL_CloseAudioDevice(app.audio_dev);
+    }
     grind_renderer_shutdown(&app.renderer);
     SDL_GL_DeleteContext(app.gl_ctx);
     SDL_DestroyWindow(app.window);

@@ -316,6 +316,7 @@ bool grind_action_pickup_ground_money(GrindWorld *world) {
 
     world->player.cash += world->ground_money_amount;
     world->ground_money_available = false;
+    world->sound_events_mask |= GRIND_SFX_COIN;
     set_status(world, "Found $12.00 on the street! Visit the Wholesale Market to buy table & lemons.");
     return true;
 }
@@ -429,6 +430,7 @@ bool grind_action_craft_lemonade(GrindWorld *world, int batches) {
         return false;
     }
     p->stand_lemonade_quality = calc_recipe_quality(world);
+    world->sound_events_mask |= GRIND_SFX_CRAFT;
     if (p->skill_production >= 0.20f) {
         p->unlocked_insights |= GRIND_INSIGHT_UNIT_ECONOMICS;
     }
@@ -569,6 +571,7 @@ bool grind_action_deliver_contract_parcel(GrindWorld *world, int contract_idx) {
     float payout = c->reward_cash * tip_mult;
     p->cash += payout;
     world->revenue_today += payout;
+    world->sound_events_mask |= GRIND_SFX_SALE;
     p->deliveries_completed_total++;
     p->skill_logistics = grind_clampf(p->skill_logistics + 0.28f, 0.0f, 10.0f);
     p->business_reputation = grind_clampf(p->business_reputation + 2.5f, 0.0f, 100.0f);
@@ -784,6 +787,7 @@ bool grind_action_upgrade_housing(GrindWorld *world, GrindHousingTier tier) {
     if (p->cash < cost) return false;
     p->cash -= cost;
     p->housing = tier;
+    world->sound_events_mask |= GRIND_SFX_UPGRADE;
     grind_update_social_reactions(world);
     set_status(world, tier == HOUSING_STUDIO_APT
         ? "Moved into Sunny Studio Apartment! Better sleep & lower stress."
@@ -855,8 +859,14 @@ void grind_update_social_reactions(GrindWorld *world) {
                          "\"You built a real empire! Just stay grounded, my friend.\"");
             }
         } else if (npc->archetype == ARCHETYPE_ENVIOUS_PEER) {
-            /* Devon gets increasingly envious as player's visible wealth rises */
-            if (pw < 12.0f) {
+            /* Devon gets increasingly envious as player's visible wealth rises, unless allied as franchise partner */
+            if (world->rival_allied_franchise) {
+                npc->envy = 0.05f;
+                npc->affection = 0.78f;
+                npc->respect = 0.85f;
+                snprintf(npc->last_reaction, sizeof(npc->last_reaction),
+                         "\"Thanks for cutting me in as a franchise partner! We're crushing it!\"");
+            } else if (pw < 12.0f) {
                 npc->envy = 0.05f;
                 npc->affection = 0.45f;
                 snprintf(npc->last_reaction, sizeof(npc->last_reaction),
@@ -922,6 +932,58 @@ bool grind_action_talk_to_npc(GrindWorld *world, int npc_idx) {
     return true;
 }
 
+bool grind_action_social_choice(GrindWorld *world, int npc_idx, int choice_id) {
+    if (npc_idx < 0 || npc_idx >= world->npc_count) return false;
+    GrindPlayer *p = &world->player;
+    GrindNpc *npc = &world->npcs[npc_idx];
+
+    if (npc->archetype == ARCHETYPE_LOYAL_FRIEND) {
+        /* Marcus: Share a meal / bonus ($15) -> boosts affection, lowers stress, teaches persuasion */
+        if (choice_id == 1 && p->cash >= 15.0f) {
+            p->cash -= 15.0f;
+            npc->affection = grind_clampf(npc->affection + 0.20f, -1.0f, 1.0f);
+            npc->trust = grind_clampf(npc->trust + 0.15f, 0.0f, 1.0f);
+            p->stress = grind_clampf(p->stress - 22.0f, 0.0f, 100.0f);
+            p->skill_persuasion = grind_clampf(p->skill_persuasion + 0.30f, 0.0f, 10.0f);
+            world->sound_events_mask |= GRIND_SFX_UPGRADE;
+            set_status(world, "Shared an artisan meal with Marcus! (-22 Stress, +Persuasion, +Trust)");
+            return true;
+        }
+    } else if (npc->archetype == ARCHETYPE_ENVIOUS_PEER) {
+        /* Devon: Offer Profit-Sharing Franchise Partnership ($80) -> converts Rival Stand into Allied Franchise! */
+        if (choice_id == 1 && !world->rival_allied_franchise && p->cash >= 80.0f) {
+            p->cash -= 80.0f;
+            world->rival_stand_active = true;
+            world->rival_allied_franchise = true;
+            grind_update_social_reactions(world);
+            world->sound_events_mask |= GRIND_SFX_UPGRADE;
+            set_status(world, "Partnered with Devon! Rival stand is now an Allied Franchise paying royalties!");
+            return true;
+        }
+    } else if (npc->archetype == ARCHETYPE_OPPORTUNIST) {
+        /* Chloe: Choice 1 = Set firm boundaries ($0 lost, -10 Stress); Choice 2 = Sponsor PR Event ($120) */
+        if (choice_id == 1) {
+            p->stress = grind_clampf(p->stress - 10.0f, 0.0f, 100.0f);
+            npc->respect = grind_clampf(npc->respect + 0.18f, 0.0f, 1.0f);
+            set_status(world, "Politely declined Chloe's handout request. (+Respect, -10 Stress)");
+            return true;
+        } else if (choice_id == 2 && p->cash >= 120.0f) {
+            p->cash -= 120.0f;
+            p->marketing_awareness = grind_clampf(p->marketing_awareness + 0.30f, 0.0f, 1.0f);
+            world->sound_events_mask |= GRIND_SFX_UPGRADE;
+            set_status(world, "Sponsored Chloe's Gala PR Event! (+30% Citywide Brand Awareness)");
+            return true;
+        }
+    } else if (npc->archetype == ARCHETYPE_BANKER) {
+        if (choice_id == 1) {
+            return grind_action_request_bank_loan(world, 250.0f);
+        } else if (choice_id == 2) {
+            return grind_action_repay_bank_loan(world, 250.0f);
+        }
+    }
+    return false;
+}
+
 void grind_action_sleep_overnight(GrindWorld *world) {
     GrindPlayer *p = &world->player;
     world->day_index++;
@@ -985,9 +1047,18 @@ bool grind_action_context_interact(GrindWorld *world) {
         }
     }
 
-    /* 3. Check proximity to named NPCs for social interaction */
+    /* 3. Check proximity to named NPCs for social interaction & relationship choices */
     for (int i = 0; i < 4; ++i) {
         if (vec3_dist_xz(p->pos, world->npcs[i].pos) <= 5.5f) {
+            if (i == 1 && world->npcs[1].envy > 0.25f && !world->rival_allied_franchise && p->cash >= 80.0f) {
+                return grind_action_social_choice(world, 1, 1);
+            }
+            if (i == 0 && p->stress > 30.0f && p->cash >= 15.0f) {
+                return grind_action_social_choice(world, 0, 1);
+            }
+            if (i == 2 && p->perceived_wealth > 25.0f) {
+                return grind_action_social_choice(world, 2, 1);
+            }
             return grind_action_talk_to_npc(world, i);
         }
     }
@@ -1198,7 +1269,7 @@ void grind_world_tick(GrindWorld *world, float sim_minutes) {
             if (vec3_dist_xz(npc->pos, p->stand_pos) <= detect_radius) {
                 float u = grind_eval_customer_utility(world, npc, p->stand_price, p->stand_lemonade_quality);
                 float u_rival = -10.0f;
-                if (world->rival_stand_active) {
+                if (world->rival_stand_active && !world->rival_allied_franchise) {
                     /* Rival has lower brand awareness (-0.12 offset), so fair price or good quality beats rival */
                     u_rival = grind_eval_customer_utility(world, npc, world->rival_stand_price, world->rival_stand_quality) - 0.12f;
                 }
@@ -1208,6 +1279,7 @@ void grind_world_tick(GrindWorld *world, float sim_minutes) {
                     npc->drink_timer = 0.8f;
                     p->cash += p->stand_price;
                     world->revenue_today += p->stand_price;
+                    world->sound_events_mask |= GRIND_SFX_SALE;
                     p->stand_lemonade_stock--;
                     p->cups_sold_total++;
                     if (p->cups_sold_total >= 10) {
@@ -1221,11 +1293,17 @@ void grind_world_tick(GrindWorld *world, float sim_minutes) {
                     world->sale_popup_timer = 2.2f;
                     world->sale_popup_pos = vec3_make(p->stand_pos.x, 3.0f, p->stand_pos.z);
                     world->sale_popup_amount = p->stand_price;
-                } else if (world->rival_stand_active && u_rival > 0.0f && u_rival > u) {
+                } else if (world->rival_stand_active && !world->rival_allied_franchise && u_rival > 0.0f && u_rival > u) {
                     /* Customer chose the rival stand because player's price/quality utility was worse! */
                     npc->thirst = grind_clampf(npc->thirst - 0.55f, 0.0f, 1.0f);
                     world->rival_cups_sold++;
                     p->unlocked_insights |= GRIND_INSIGHT_COMPETITOR_INTEL;
+                } else if (world->rival_stand_active && world->rival_allied_franchise && u > 0.0f) {
+                    /* Allied franchise partner Devon generates passive royalty ($0.75/cup) when stand is out of stock */
+                    npc->thirst = grind_clampf(npc->thirst - 0.55f, 0.0f, 1.0f);
+                    p->cash += 0.75f;
+                    world->revenue_today += 0.75f;
+                    world->rival_cups_sold++;
                 }
             }
         }
