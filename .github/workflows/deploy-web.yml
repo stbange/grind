@@ -1,0 +1,69 @@
+name: Build, Test & Deploy Web to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux C11 & SDL2/OpenGL dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config libsdl2-dev libgl1-mesa-dev libgles2-mesa-dev
+
+      - name: Configure & Build Linux Native + Tests
+        run: |
+          cmake -B build_linux -DCMAKE_BUILD_TYPE=Release
+          cmake --build build_linux --parallel
+
+      - name: Run Unit Tests & Automated Headless Game Progression Tests
+        run: |
+          ctest --test-dir build_linux --output-on-failure -V
+
+      - name: Setup Emscripten SDK
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+
+      - name: Build Web Version (Emscripten -> WebGL 2.0 + SDL2)
+        run: |
+          emcmake cmake -B build_web -DCMAKE_BUILD_TYPE=Release
+          cmake --build build_web --parallel
+          mkdir -p dist_web
+          cp build_web/grind_app.html dist_web/index.html
+          cp build_web/grind_app.js dist_web/
+          cp build_web/grind_app.wasm dist_web/
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist_web
+
+  deploy_pages:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build_and_test
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
