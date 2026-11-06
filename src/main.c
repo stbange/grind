@@ -49,7 +49,7 @@ static void process_events(GrindApp *app) {
                 grind_input_on_touch_up(&app->input, (int64_t)ev.tfinger.fingerId, ev.tfinger.x, ev.tfinger.y);
                 break;
             case SDL_MOUSEBUTTONDOWN:
-                if (app->input.touch_controls_active && ev.button.button == SDL_BUTTON_LEFT) {
+                if ((app->input.touch_controls_active || app->input.biz_drawer_open) && ev.button.button == SDL_BUTTON_LEFT) {
                     float nx = (float)ev.button.x / (float)app->input.viewport_w;
                     float ny = (float)ev.button.y / (float)app->input.viewport_h;
                     grind_input_on_touch_down(&app->input, 999, nx, ny);
@@ -98,16 +98,22 @@ static void process_events(GrindApp *app) {
                         app->input.buttons[TOUCH_BTN_SLEEP].just_pressed = true;
                         break;
                     case SDLK_1:
-                        grind_action_hire_employee(&app->world, EMP_ROLE_STAND_OPERATOR);
+                        app->input.tablet_action_selected = 1;
                         break;
                     case SDLK_2:
-                        grind_action_hire_employee(&app->world, EMP_ROLE_COURIER);
+                        app->input.tablet_action_selected = 2;
                         break;
                     case SDLK_3:
-                        grind_action_launch_marketing_campaign(&app->world, 1);
+                        app->input.tablet_action_selected = 3;
                         break;
                     case SDLK_4:
-                        grind_action_consume_item(&app->world, ITEM_FRESH_MEAL);
+                        app->input.tablet_action_selected = 4;
+                        break;
+                    case SDLK_5:
+                        app->input.tablet_action_selected = 5;
+                        break;
+                    case SDLK_6:
+                        app->input.tablet_action_selected = 6;
                         break;
                     default:
                         break;

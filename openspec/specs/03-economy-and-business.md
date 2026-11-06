@@ -4,8 +4,9 @@
 Defines how business operations emerge from physical transformation, logistics, utility-based NPC purchasing decisions, employee task delegation, marketing propagation, and capital investment.
 
 ## 2. Crafting & Retail Point-of-Sale (e.g., Lemonade Stand)
-### REQ-ECO-001: Physical Production
-- Combining `1x Lemon` + `1x Sugar Pack` + `1x Water Jug` + `5x Paper Cups` at a placed `Folding Table` (or `Commercial Storefront`) produces `5x Cups of Lemonade` with quality determined by ingredient freshness and the operator's `skill_production` + `skill_business`.
+### REQ-ECO-001: Physical Production & First-Principles Recipe Mixing
+- Combining `recipe_lemons_per_batch` Lemons + `recipe_sugar_per_batch` Sugar Packs + `1x Water Jug` + `5x Paper Cups` at a placed `Folding Table` (or `Commercial Storefront`) produces `5x Cups of Lemonade`.
+- Product quality emerges from ingredient freshness, operator `skill_production`, and recipe balance relative to ambient temperature (richer 2-lemon/2-sugar recipes achieve premium quality `>0.90`, supporting higher retail prices).
 
 ### REQ-ECO-002: Customer Utility Function
 - When an NPC with `thirst > 0.25` walks within `12.0m` of an active point-of-sale stocking beverages at `unit_price`, the NPC computes purchase utility:

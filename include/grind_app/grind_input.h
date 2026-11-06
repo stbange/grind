@@ -57,8 +57,9 @@ typedef struct {
     /* On-Screen Action Buttons */
     GrindTouchButton buttons[TOUCH_BTN_COUNT];
 
-    /* Business quick-menu drawer toggle */
+    /* Business quick-menu drawer toggle & selected tablet action row (1..6, 0=none) */
     bool biz_drawer_open;
+    int tablet_action_selected;
     bool quit_requested;
 } GrindInputState;
 

@@ -86,7 +86,12 @@ static void test_economy_and_crafting(void) {
     ASSERT_TRUE(w.player.stand_lemonade_stock == 10, "Stand holds 10 cups of lemonade");
     ASSERT_TRUE(w.player.skill_production > 0.2f, "Crafting increases production skill");
 
-    /* Verify customer utility responds to price and temperature */
+    /* Verify customer utility responds to price, temperature, and recipe mixing */
+    float q_basic = w.player.stand_lemonade_quality;
+    grind_action_set_recipe(&w, 2, 2);
+    float q_rich = w.player.stand_lemonade_quality;
+    ASSERT_TRUE(q_rich > q_basic, "Richer 2-lemon/2-sugar recipe increases lemonade quality");
+
     GrindNpc *customer = &w.npcs[5];
     customer->thirst = 0.85f;
     w.ambient_temp_c = 30.0f;
@@ -200,6 +205,15 @@ static void test_adaptive_input_and_camera(void) {
     float phase_before = w.npcs[0].walk_phase;
     grind_world_tick(&w, 5.0f);
     ASSERT_TRUE(w.npcs[0].walk_phase > phase_before, "NPC articulated walk_phase advances as NPC walks");
+
+    /* Verify interactive Business Tablet row click/touch selection */
+    in.biz_drawer_open = true;
+    grind_input_begin_frame(&in);
+    grind_input_on_touch_down(&in, 10, 0.50f, 0.32f); /* Row 2: Retail Pricing */
+    ASSERT_TRUE(in.tablet_action_selected == 2, "Touching Row 2 on Business Tablet selects action 2");
+    float old_price = w.player.stand_price;
+    grind_input_apply_to_world(&in, &w, 0.1f);
+    ASSERT_TRUE(fabsf(w.player.stand_price - old_price) > 0.1f, "Tablet Row 2 updates lemonade retail price");
 }
 
 int main(void) {

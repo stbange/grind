@@ -485,7 +485,14 @@ void grind_renderer_draw_frame(GrindRenderer *r, const GrindWorld *world, const 
         draw_detailed_building(r, vp, &world->buildings[i], evening);
     }
 
-    /* 3. Display Bicycles Outside the Bike Shop */
+    /* 3. Physical 3D Market Shelf Counters & Display Bicycles */
+    /* Wholesale Market wooden display counter with Lemon, Sugar, Water & Table crates */
+    draw_box_3d(r, vp, vec3_make(-32.0f, 0.0f, -3.2f), vec3_make(9.5f, 0.95f, 1.4f), 0.0f, (Color4){0.52f, 0.35f, 0.20f, 1.0f});
+    draw_box_3d(r, vp, vec3_make(-35.2f, 0.95f, -3.2f), vec3_make(1.4f, 0.65f, 1.1f), 0.0f, (Color4){0.98f, 0.88f, 0.16f, 1.0f}); /* Lemons crate */
+    draw_box_3d(r, vp, vec3_make(-33.2f, 0.95f, -3.2f), vec3_make(1.4f, 0.65f, 1.1f), 0.0f, (Color4){0.95f, 0.95f, 0.98f, 1.0f}); /* Sugar crate */
+    draw_box_3d(r, vp, vec3_make(-31.2f, 0.95f, -3.2f), vec3_make(1.4f, 0.75f, 1.1f), 0.0f, (Color4){0.22f, 0.68f, 0.95f, 1.0f}); /* Water jugs */
+    draw_box_3d(r, vp, vec3_make(-28.8f, 0.95f, -3.2f), vec3_make(1.8f, 0.45f, 1.2f), 0.0f, (Color4){0.68f, 0.45f, 0.25f, 1.0f}); /* Folding tables */
+
     draw_bicycle_3d(r, vp, vec3_make(34.0f, 0.0f, -10.0f), 0.5f, (Color4){0.18f, 0.72f, 0.92f, 1.0f});
     draw_bicycle_3d(r, vp, vec3_make(37.0f, 0.0f, -10.0f), 0.5f, (Color4){0.92f, 0.32f, 0.25f, 1.0f});
 
@@ -717,8 +724,39 @@ void grind_renderer_draw_frame(GrindRenderer *r, const GrindWorld *world, const 
         draw_text_2d(vw - 348.0f, 122.0f + i * 19.0f, 2.0f, scol, sline);
     }
 
-    /* D. Crosshair or Map Header */
-    if (input->map_transition_t < 0.3f) {
+    /* D. Crosshair, Interactive Business & Courier Tablet Overlay, or Map Header */
+    if (input->biz_drawer_open) {
+        float tx = vw * 0.16f;
+        float ty = vh * 0.16f;
+        float tw = vw * 0.68f;
+        float th = vh * 0.58f;
+        push_quad_2d(tx, ty, tw, th, (Color4){0.05f, 0.08f, 0.14f, 0.94f});
+        push_quad_2d(tx, ty, tw, 34.0f, (Color4){0.14f, 0.32f, 0.52f, 0.98f});
+        draw_text_2d(tx + 16.0f, ty + 10.0f, 2.5f, (Color4){1.0f, 0.95f, 0.45f, 1.0f},
+                     "BUSINESS & LOGISTICS TABLET (CLICK ROW OR PRESS 1-6, [B] TO CLOSE)");
+
+        char rows[6][128];
+        snprintf(rows[0], sizeof(rows[0]), "[1] RECIPE & CRAFT: %d LEMON / %d SUGAR (QUAL %.0f%%) -> CRAFT BATCH",
+                 p->recipe_lemons_per_batch, p->recipe_sugar_per_batch, p->stand_lemonade_quality * 100.0f);
+        snprintf(rows[1], sizeof(rows[1]), "[2] RETAIL PRICING: CURRENT $%.2f/CUP -> CYCLE PRICE ($1.20-$2.80)",
+                 p->stand_price);
+        snprintf(rows[2], sizeof(rows[2]), "[3] HIRE STAND BARISTA ($45 FEE, $3.50/HR) -> AUTO-CRAFTS & SELLS");
+        snprintf(rows[3], sizeof(rows[3]), "[4] HIRE COURIER RIDER ($65 FEE, $4.50/HR) -> AUTO-DELIVERS PARCELS");
+        snprintf(rows[4], sizeof(rows[4]), "[5] LAUNCH MARKETING CAMPAIGN ($50) -> BOOSTS BRAND AWARENESS (%.0f%%)",
+                 p->marketing_awareness * 100.0f);
+        snprintf(rows[5], sizeof(rows[5]), "[6] CAPITAL INVESTMENT: %s",
+                 !p->owns_storefront ? "LEASE FLAGSHIP STOREFRONT ($350)" : "BUY WHOLESALE SUPPLIER EQUITY ($200)");
+
+        for (int r_i = 0; r_i < 6; ++r_i) {
+            float ry = vh * (0.22f + (float)r_i * 0.08f);
+            float rh = vh * 0.068f;
+            Color4 rbg = (r_i % 2 == 0)
+                ? (Color4){0.10f, 0.15f, 0.24f, 0.92f}
+                : (Color4){0.13f, 0.19f, 0.29f, 0.92f};
+            push_quad_2d(tx + 14.0f, ry, tw - 28.0f, rh, rbg);
+            draw_text_2d(tx + 26.0f, ry + rh * 0.32f, 2.1f, (Color4){0.88f, 0.96f, 1.0f, 1.0f}, rows[r_i]);
+        }
+    } else if (input->map_transition_t < 0.3f) {
         push_quad_2d(vw * 0.5f - 6.0f, vh * 0.5f - 1.0f, 12.0f, 2.0f, (Color4){1.0f, 1.0f, 1.0f, 0.75f});
         push_quad_2d(vw * 0.5f - 1.0f, vh * 0.5f - 6.0f, 2.0f, 12.0f, (Color4){1.0f, 1.0f, 1.0f, 0.75f});
     } else {

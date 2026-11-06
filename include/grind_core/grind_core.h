@@ -199,6 +199,8 @@ typedef struct {
     int stand_lemonade_stock;
     float stand_lemonade_quality;
     float stand_price;
+    int recipe_lemons_per_batch;
+    int recipe_sugar_per_batch;
     int cups_sold_total;
     int deliveries_completed_total;
 
@@ -264,6 +266,8 @@ bool grind_action_buy_item(GrindWorld *world, GrindItemType type, int quantity);
 bool grind_action_deploy_stand(GrindWorld *world);
 bool grind_action_craft_lemonade(GrindWorld *world, int batches);
 void grind_action_set_lemonade_price(GrindWorld *world, float new_price);
+void grind_action_adjust_price(GrindWorld *world, float delta);
+void grind_action_set_recipe(GrindWorld *world, int lemons_per_batch, int sugar_per_batch);
 float grind_eval_customer_utility(const GrindWorld *world, const GrindNpc *npc, float price, float quality);
 
 /* Logistics & Courier Actions */

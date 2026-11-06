@@ -42,6 +42,7 @@ void grind_input_resize(GrindInputState *in, int viewport_w, int viewport_h) {
 void grind_input_begin_frame(GrindInputState *in) {
     in->look_yaw_delta = 0.0f;
     in->look_pitch_delta = 0.0f;
+    in->tablet_action_selected = 0;
     for (int i = 0; i < TOUCH_BTN_COUNT; ++i) {
         in->buttons[i].just_pressed = false;
     }
@@ -54,6 +55,15 @@ void grind_input_begin_frame(GrindInputState *in) {
 void grind_input_on_touch_down(GrindInputState *in, int64_t finger_id, float norm_x, float norm_y) {
     in->touch_detected = true;
     in->touch_controls_active = true;
+
+    /* 0. If the interactive Business & Courier Tablet is open, check row hit-boxes */
+    if (in->biz_drawer_open && norm_x >= 0.16f && norm_x <= 0.84f && norm_y >= 0.22f && norm_y <= 0.70f) {
+        int row = (int)((norm_y - 0.22f) / 0.08f);
+        if (row >= 0 && row < 6) {
+            in->tablet_action_selected = row + 1;
+            return;
+        }
+    }
 
     /* 1. Check right-hand action buttons first */
     float aspect = (float)in->viewport_w / (float)(in->viewport_h > 0 ? in->viewport_h : 1);
@@ -158,13 +168,43 @@ void grind_input_apply_to_world(GrindInputState *in, GrindWorld *world, float dt
     }
     if (in->buttons[TOUCH_BTN_BIZ_MENU].just_pressed) {
         in->biz_drawer_open = !in->biz_drawer_open;
-        /* In quick-action mode, execute next smart business milestone if affordable */
-        if (p->stand_deployed && world->employee_count == 0 && p->cash >= 45.0f) {
-            grind_action_hire_employee(world, EMP_ROLE_STAND_OPERATOR);
-        } else if (world->employee_count == 1 && p->cash >= 65.0f) {
-            grind_action_hire_employee(world, EMP_ROLE_COURIER);
-        } else if (p->marketing_awareness < 0.5f && p->cash >= 50.0f) {
-            grind_action_launch_marketing_campaign(world, 1);
+    }
+
+    /* Execute interactive Business & Courier Tablet action if a row/shortcut was selected */
+    if (in->tablet_action_selected > 0) {
+        switch (in->tablet_action_selected) {
+            case 1: {
+                /* Cycle recipe richness (1L/1S -> 2L/2S -> 3L/3S -> 1L/1S) & craft batch */
+                int next_r = (p->recipe_lemons_per_batch % 3) + 1;
+                grind_action_set_recipe(world, next_r, next_r);
+                grind_action_craft_lemonade(world, 1);
+                break;
+            }
+            case 2: {
+                /* Cycle lemonade retail price ($1.20 -> $1.60 -> $2.20 -> $2.80) */
+                float next_p = p->stand_price + 0.40f;
+                if (next_p > 3.0f) next_p = 1.20f;
+                grind_action_set_lemonade_price(world, next_p);
+                break;
+            }
+            case 3:
+                grind_action_hire_employee(world, EMP_ROLE_STAND_OPERATOR);
+                break;
+            case 4:
+                grind_action_hire_employee(world, EMP_ROLE_COURIER);
+                break;
+            case 5:
+                grind_action_launch_marketing_campaign(world, 1);
+                break;
+            case 6:
+                if (!p->owns_storefront && p->cash >= 350.0f) {
+                    grind_action_lease_storefront(world);
+                } else {
+                    grind_action_invest_supplier_equity(world, 200.0f);
+                }
+                break;
+            default:
+                break;
         }
     }
 

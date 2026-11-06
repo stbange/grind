@@ -73,6 +73,8 @@ void grind_world_init(GrindWorld *world, uint64_t seed) {
     p->stress = 12.0f;
     p->stand_price = 1.60f;
     p->stand_lemonade_quality = 0.70f;
+    p->recipe_lemons_per_batch = 1;
+    p->recipe_sugar_per_batch = 1;
     for (int i = 0; i < ITEM_COUNT; ++i) {
         p->item_freshness[i] = 1.0f;
     }
@@ -376,6 +378,16 @@ bool grind_action_deploy_stand(GrindWorld *world) {
     return true;
 }
 
+static float calc_recipe_quality(const GrindWorld *world) {
+    const GrindPlayer *p = &world->player;
+    int lem = p->recipe_lemons_per_batch > 0 ? p->recipe_lemons_per_batch : 1;
+    int sug = p->recipe_sugar_per_batch > 0 ? p->recipe_sugar_per_batch : 1;
+    float richness = (float)(lem + sug) * 0.14f; /* 1+1 = 0.28, 2+2 = 0.56 */
+    float imbalance = (float)abs(lem - sug) * 0.12f;
+    float base = 0.42f + richness - imbalance + 0.035f * p->skill_production;
+    return grind_clampf(base * p->item_freshness[ITEM_LEMON], 0.25f, 1.0f);
+}
+
 bool grind_action_craft_lemonade(GrindWorld *world, int batches) {
     GrindPlayer *p = &world->player;
     if (!p->stand_deployed && !p->owns_storefront) {
@@ -388,12 +400,15 @@ bool grind_action_craft_lemonade(GrindWorld *world, int batches) {
     p->stand_water += p->inventory[ITEM_WATER_JUG]; p->inventory[ITEM_WATER_JUG] = 0;
     p->stand_cups += p->inventory[ITEM_PAPER_CUPS] * 5; p->inventory[ITEM_PAPER_CUPS] = 0;
 
+    int req_lem = p->recipe_lemons_per_batch > 0 ? p->recipe_lemons_per_batch : 1;
+    int req_sug = p->recipe_sugar_per_batch > 0 ? p->recipe_sugar_per_batch : 1;
+
     int crafted = 0;
     for (int i = 0; i < batches; ++i) {
-        if (p->stand_lemons >= 1 && p->stand_sugar >= 1 && p->stand_water >= 1 && p->stand_cups >= 5) {
+        if (p->stand_lemons >= req_lem && p->stand_sugar >= req_sug && p->stand_water >= 1 && p->stand_cups >= 5) {
             if (p->stamina < 3.0f) break;
-            p->stand_lemons -= 1;
-            p->stand_sugar -= 1;
+            p->stand_lemons -= req_lem;
+            p->stand_sugar -= req_sug;
             p->stand_water -= 1;
             p->stand_cups -= 5;
             p->stand_lemonade_stock += 5;
@@ -403,22 +418,37 @@ bool grind_action_craft_lemonade(GrindWorld *world, int batches) {
         }
     }
     if (crafted == 0) {
-        set_status(world, "Missing ingredients (1 Lemon, 1 Sugar, 1 Water, 1 Cup-pack) or stamina!");
+        set_status(world, "Missing ingredients for recipe or low stamina!");
         return false;
     }
-    p->stand_lemonade_quality = grind_clampf(
-        0.65f + 0.035f * p->skill_production * p->item_freshness[ITEM_LEMON],
-        0.30f, 1.0f
-    );
+    p->stand_lemonade_quality = calc_recipe_quality(world);
     char buf[GRIND_MAX_LOG_LEN];
-    snprintf(buf, sizeof(buf), "Crafted %d cups of lemonade (Quality %.0f%%).",
-             crafted * 5, p->stand_lemonade_quality * 100.0f);
+    snprintf(buf, sizeof(buf), "Crafted %d cups (Recipe %dL/%dS, Quality %.0f%%).",
+             crafted * 5, req_lem, req_sug, p->stand_lemonade_quality * 100.0f);
     set_status(world, buf);
     return true;
 }
 
 void grind_action_set_lemonade_price(GrindWorld *world, float new_price) {
     world->player.stand_price = grind_clampf(new_price, 0.25f, 15.0f);
+    char buf[GRIND_MAX_LOG_LEN];
+    snprintf(buf, sizeof(buf), "Set Lemonade Price to $%.2f per cup.", world->player.stand_price);
+    set_status(world, buf);
+}
+
+void grind_action_adjust_price(GrindWorld *world, float delta) {
+    grind_action_set_lemonade_price(world, world->player.stand_price + delta);
+}
+
+void grind_action_set_recipe(GrindWorld *world, int lemons_per_batch, int sugar_per_batch) {
+    GrindPlayer *p = &world->player;
+    p->recipe_lemons_per_batch = (int)grind_clampf((float)lemons_per_batch, 1.0f, 4.0f);
+    p->recipe_sugar_per_batch = (int)grind_clampf((float)sugar_per_batch, 1.0f, 4.0f);
+    p->stand_lemonade_quality = calc_recipe_quality(world);
+    char buf[GRIND_MAX_LOG_LEN];
+    snprintf(buf, sizeof(buf), "Recipe set to %d Lemon / %d Sugar -> Quality %.0f%%.",
+             p->recipe_lemons_per_batch, p->recipe_sugar_per_batch, p->stand_lemonade_quality * 100.0f);
+    set_status(world, buf);
 }
 
 float grind_eval_customer_utility(const GrindWorld *world, const GrindNpc *npc, float price, float quality) {
