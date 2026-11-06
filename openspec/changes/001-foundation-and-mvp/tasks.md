@@ -13,4 +13,4 @@
 - [x] 4. Implement `grind_input` with First-Person / Top-Down Map camera controls and automatic small-screen touch virtual joystick & buttons.
 - [x] 5. Implement `grind_renderer` and `main.c` with SDL2 + OpenGL 3.3 / ES 3.0 procedural 3D meshes, dynamic lighting, vector HUD, and Emscripten Web shell.
 - [x] 6. Implement Unit Tests (`tests/unit/test_main.c`) and Automated Headless Game Progression Tests (`tests/game/test_game_progression.c`).
-- [ ] 7. Configure CMake (`CMakeLists.txt`) for Linux, Windows (MinGW), and Web (Emscripten), compile, and pass all unit and automated game tests (pending `apt-get` sudo password authentication).
+- [x] 7. Configure CMake (`CMakeLists.txt`) for Linux, Windows (MinGW), and Web (Emscripten), compile, and pass all unit and automated game tests, and deploy Web build to GitHub Pages.
