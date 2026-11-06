@@ -181,6 +181,25 @@ static void test_adaptive_input_and_camera(void) {
     grind_input_apply_to_world(&in, &w, 0.5f);
     ASSERT_TRUE(in.camera_mode == CAMERA_MODE_TOP_DOWN_MAP, "Tapping MAP touch button switches to Top-Down Map view");
     ASSERT_TRUE(in.map_transition_t > 0.0f, "Camera transition blends toward overhead map matrix");
+
+    /* Test 3D world-to-screen projection for world-space labels & speech bubbles */
+    grind_input_init(&in, 1280, 720, false);
+    w.player.pos = vec3_make(0.0f, 0.0f, 10.0f);
+    w.player.yaw_rad = 0.0f; /* Looking toward -Z (0, 0, 0) */
+    w.player.pitch_rad = 0.0f;
+    Mat4 vp = mat4_mul(grind_input_compute_proj_matrix(&in), grind_input_compute_view_matrix(&in, &w));
+    Vec2 scr_front = {0};
+    bool front_ok = grind_project_world_to_screen(vec3_make(0.0f, 1.68f, 0.0f), vp, 1280, 720, &scr_front);
+    ASSERT_TRUE(front_ok, "Point directly in front of First-Person camera projects onto screen");
+    ASSERT_NEAR(scr_front.x, 640.0f, 5.0f, "Centered 3D point projects to horizontal screen center");
+
+    bool behind_ok = grind_project_world_to_screen(vec3_make(0.0f, 1.68f, 25.0f), vp, 1280, 720, NULL);
+    ASSERT_TRUE(!behind_ok, "Point behind First-Person camera is culled by projection");
+
+    /* Verify NPC walk_phase advances during simulation tick */
+    float phase_before = w.npcs[0].walk_phase;
+    grind_world_tick(&w, 5.0f);
+    ASSERT_TRUE(w.npcs[0].walk_phase > phase_before, "NPC articulated walk_phase advances as NPC walks");
 }
 
 int main(void) {

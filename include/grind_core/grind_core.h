@@ -114,6 +114,9 @@ typedef struct {
     GrindNpcArchetype archetype;
     Vec3 pos;
     Vec3 target_pos;
+    float facing_yaw;
+    float walk_phase;
+    float drink_timer;       /* > 0 when holding/drinking a recently purchased lemonade cup */
     float walk_speed;
     float cash;
     float thirst;            /* 0.0 to 1.0 */
@@ -144,6 +147,8 @@ typedef struct {
     float morale;       /* 0.0 to 1.0 */
     Vec3 pos;
     Vec3 target_pos;
+    float facing_yaw;
+    float walk_phase;
     float task_progress;
     float revenue_generated_today;
 } GrindEmployee;
@@ -230,6 +235,12 @@ typedef struct {
     float revenue_today;
     float wages_paid_today;
     float passive_income_today;
+
+    /* 3D visual animation clock & floating +$ sale popup state */
+    float anim_time_sec;
+    float sale_popup_timer;
+    Vec3 sale_popup_pos;
+    float sale_popup_amount;
 
     char status_message[GRIND_MAX_LOG_LEN];
 } GrindWorld;

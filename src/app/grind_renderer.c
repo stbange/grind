@@ -44,13 +44,12 @@ static const char *k_fs_3d =
     "    vec3 n = normalize(v_norm);\n"
     "    float ndl = max(dot(n, normalize(u_light_dir)), 0.0);\n"
     "    float hemi = 0.5 + 0.5 * n.y;\n"
-    "    vec3 light = u_ambient * (0.65 + 0.35 * hemi) + vec3(0.95, 0.92, 0.85) * ndl * 0.78;\n"
-    "    /* Subtle street grid lines on ground plane */\n"
+    "    vec3 light = u_ambient * (0.65 + 0.35 * hemi) + vec3(0.96, 0.93, 0.86) * ndl * 0.78;\n"
     "    vec3 base = u_color.rgb;\n"
-    "    if (v_world_pos.y < 0.05 && n.y > 0.9) {\n"
+    "    if (v_world_pos.y < -0.02 && n.y > 0.9) {\n"
     "        float gx = abs(fract(v_world_pos.x * 0.125) - 0.5);\n"
     "        float gz = abs(fract(v_world_pos.z * 0.125) - 0.5);\n"
-    "        if (gx < 0.02 || gz < 0.02) base *= 0.88;\n"
+    "        if (gx < 0.018 || gz < 0.018) base *= 0.90;\n"
     "    }\n"
     "    frag_color = vec4(base * light, u_color.a);\n"
     "}\n";
@@ -76,7 +75,7 @@ static const char *k_fs_2d =
     "    frag_color = v_col;\n"
     "}\n";
 
-/* Unit cube centered on X/Z [-0.5, 0.5] and resting on Y [0.0, 1.0] for intuitive 3D building/prop placement */
+/* Unit cube centered on X/Z [-0.5, 0.5] and resting on Y [0.0, 1.0] */
 static const float k_cube_verts[] = {
     /* Front (+Z) */
     -0.5f,0.0f, 0.5f, 0,0,1,   0.5f,0.0f, 0.5f, 0,0,1,   0.5f,1.0f, 0.5f, 0,0,1,
@@ -124,13 +123,12 @@ static unsigned int link_program(const char *vs_src, const char *fs_src) {
     return p;
 }
 
-/* Immediate-mode 2D batch buffer for HUD panels, bars, vector font, and touch controls */
 typedef struct {
     float x, y;
     float r, g, b, a;
 } Vertex2D;
 
-#define MAX_2D_VERTS 16384
+#define MAX_2D_VERTS 32768
 static Vertex2D g_verts_2d[MAX_2D_VERTS];
 static int g_vert_2d_count = 0;
 
@@ -148,7 +146,6 @@ static void push_quad_2d(float x, float y, float w, float h, Color4 c) {
     g_vert_2d_count += 6;
 }
 
-/* Compact 3x5 bitmap font encoded in 15-bit integers for zero-asset HUD text */
 static uint16_t glyph_bits(char ch) {
     ch = (char)toupper((unsigned char)ch);
     switch (ch) {
@@ -169,7 +166,7 @@ static uint16_t glyph_bits(char ch) {
         case '%': return 0x52A5; case '[': return 0x6926; case ']': return 0x324B;
         case '(': return 0x2922; case ')': return 0x2492; case '#': return 0x5F7D;
         case '!': return 0x2482; case '"': return 0x5400; case '\'':return 0x2400;
-        case ',': return 0x0024; case '&': return 0x3AA7;
+        case ',': return 0x0024; case '&': return 0x3AA7; case '?': return 0x70C2;
         default:  return 0x0000;
     }
 }
@@ -192,6 +189,18 @@ static void draw_text_2d(float x, float y, float scale, Color4 col, const char *
         }
         cx += 4.0f * scale;
     }
+}
+
+static void draw_world_label_2d(Vec3 world_pos, Mat4 vp, int vw, int vh, float scale, Color4 bg, Color4 fg, const char *text) {
+    Vec2 scr;
+    if (!grind_project_world_to_screen(world_pos, vp, vw, vh, &scr)) return;
+    float len = (float)strlen(text);
+    float w = len * 4.0f * scale + 10.0f;
+    float h = 5.0f * scale + 8.0f;
+    float x = scr.x - w * 0.5f;
+    float y = scr.y - h * 0.5f;
+    push_quad_2d(x, y, w, h, bg);
+    draw_text_2d(x + 5.0f, y + 4.0f, scale, fg, text);
 }
 
 bool grind_renderer_init(GrindRenderer *r) {
@@ -243,8 +252,7 @@ void grind_renderer_shutdown(GrindRenderer *r) {
     r->initialized = false;
 }
 
-static void draw_box_3d(const GrindRenderer *r, Mat4 vp, Vec3 pos, Vec3 size, float yaw_rad, Color4 col) {
-    Mat4 m = mat4_mul(mat4_translate(pos), mat4_mul(mat4_rotate_y(yaw_rad), mat4_scale(size)));
+static void draw_mat_3d(const GrindRenderer *r, Mat4 vp, Mat4 m, Color4 col) {
     Mat4 mvp = mat4_mul(vp, m);
     glUniformMatrix4fv(r->u_mvp_3d, 1, GL_FALSE, mvp.m);
     glUniformMatrix4fv(r->u_model_3d, 1, GL_FALSE, m.m);
@@ -252,15 +260,174 @@ static void draw_box_3d(const GrindRenderer *r, Mat4 vp, Vec3 pos, Vec3 size, fl
     glDrawArrays(GL_TRIANGLES, 0, r->cube_vertex_count);
 }
 
+static void draw_box_3d(const GrindRenderer *r, Mat4 vp, Vec3 pos, Vec3 size, float yaw_rad, Color4 col) {
+    Mat4 m = mat4_mul(mat4_translate(pos), mat4_mul(mat4_rotate_y(yaw_rad), mat4_scale(size)));
+    draw_mat_3d(r, vp, m, col);
+}
+
+/* Renders a box in a parent transform's local space with X/Y/Z rotation */
+static void draw_child_box(const GrindRenderer *r, Mat4 vp, Mat4 parent, Vec3 local_pos, Vec3 rot_xyz, Vec3 size, Color4 col) {
+    Mat4 m = mat4_mul(parent, mat4_translate(local_pos));
+    if (fabsf(rot_xyz.y) > 1e-4f) m = mat4_mul(m, mat4_rotate_y(rot_xyz.y));
+    if (fabsf(rot_xyz.x) > 1e-4f) m = mat4_mul(m, mat4_rotate_x(rot_xyz.x));
+    if (fabsf(rot_xyz.z) > 1e-4f) m = mat4_mul(m, mat4_rotate_z(rot_xyz.z));
+    m = mat4_mul(m, mat4_scale(size));
+    draw_mat_3d(r, vp, m, col);
+}
+
+/* Draws a low-poly park tree (trunk + 2-tier leafy crown) */
+static void draw_tree_3d(const GrindRenderer *r, Mat4 vp, Vec3 pos, float scale) {
+    draw_box_3d(r, vp, pos, vec3_make(0.55f * scale, 2.2f * scale, 0.55f * scale), 0.0f, (Color4){0.42f, 0.28f, 0.16f, 1.0f});
+    draw_box_3d(r, vp, vec3_make(pos.x, pos.y + 1.9f * scale, pos.z),
+                vec3_make(2.6f * scale, 1.9f * scale, 2.6f * scale), 0.25f, (Color4){0.20f, 0.58f, 0.26f, 1.0f});
+    draw_box_3d(r, vp, vec3_make(pos.x, pos.y + 3.4f * scale, pos.z),
+                vec3_make(1.7f * scale, 1.4f * scale, 1.7f * scale), 0.6f, (Color4){0.28f, 0.68f, 0.32f, 1.0f});
+}
+
+/* Draws a streetlamp with dusk/evening glow */
+static void draw_streetlamp_3d(const GrindRenderer *r, Mat4 vp, Vec3 pos, bool evening) {
+    draw_box_3d(r, vp, pos, vec3_make(0.22f, 4.8f, 0.22f), 0.0f, (Color4){0.22f, 0.25f, 0.28f, 1.0f});
+    draw_box_3d(r, vp, vec3_make(pos.x, 4.6f, pos.z + 0.4f), vec3_make(0.25f, 0.18f, 1.0f), 0.0f, (Color4){0.22f, 0.25f, 0.28f, 1.0f});
+    Color4 bulb = evening ? (Color4){1.0f, 0.92f, 0.45f, 1.0f} : (Color4){0.75f, 0.80f, 0.85f, 1.0f};
+    draw_box_3d(r, vp, vec3_make(pos.x, 4.35f, pos.z + 0.75f), vec3_make(0.45f, 0.30f, 0.45f), 0.0f, bulb);
+}
+
+/* Draws a detailed 3D building with sidewalk plinth, door, shop awning, window grid, and rooftop AC */
+static void draw_detailed_building(const GrindRenderer *r, Mat4 vp, const GrindBuilding *b, bool evening) {
+    /* Concrete sidewalk base */
+    draw_box_3d(r, vp, vec3_make(b->pos.x, 0.0f, b->pos.z),
+                vec3_make(b->size.x + 3.6f, 0.22f, b->size.z + 3.6f), 0.0f, (Color4){0.55f, 0.56f, 0.58f, 1.0f});
+
+    /* Main building body */
+    draw_box_3d(r, vp, b->pos, b->size, 0.0f, b->color);
+
+    /* Roof cornice & rooftop unit */
+    draw_box_3d(r, vp, vec3_make(b->pos.x, b->size.y, b->pos.z),
+                vec3_make(b->size.x + 0.6f, 0.45f, b->size.z + 0.6f), 0.0f,
+                (Color4){b->color.r * 0.65f, b->color.g * 0.65f, b->color.b * 0.65f, 1.0f});
+    draw_box_3d(r, vp, vec3_make(b->pos.x - b->size.x * 0.2f, b->size.y + 0.45f, b->pos.z),
+                vec3_make(b->size.x * 0.3f, 1.3f, b->size.z * 0.3f), 0.0f, (Color4){0.38f, 0.40f, 0.44f, 1.0f});
+
+    if (b->size.y < 5.0f) return; /* Central Plaza pavilion doesn't need multi-story windows */
+
+    /* Entrance double doors on +Z front face */
+    float front_z = b->pos.z + b->size.z * 0.5f + 0.08f;
+    draw_box_3d(r, vp, vec3_make(b->pos.x, 0.2f, front_z),
+                vec3_make(2.8f, 2.7f, 0.2f), 0.0f, (Color4){0.22f, 0.16f, 0.12f, 1.0f});
+
+    /* Shopfront awning above door */
+    draw_box_3d(r, vp, vec3_make(b->pos.x, 3.0f, front_z + 0.65f),
+                vec3_make(b->size.x * 0.65f, 0.45f, 1.5f), 0.0f,
+                (Color4){fminf(1.0f, b->color.r * 1.25f), b->color.g * 0.85f, b->color.b * 0.85f, 1.0f});
+
+    /* Window Grid across front (+Z) and back (-Z) facades */
+    Color4 win_col = evening
+        ? (Color4){0.98f, 0.86f, 0.42f, 1.0f}
+        : (Color4){0.22f, 0.32f, 0.45f, 1.0f};
+
+    int floors = (int)((b->size.y - 4.0f) / 3.2f);
+    if (floors > 6) floors = 6;
+    int cols = (int)((b->size.x - 3.0f) / 3.4f);
+    if (cols > 4) cols = 4;
+
+    for (int f = 0; f < floors; ++f) {
+        float wy = 4.2f + (float)f * 3.1f;
+        for (int c = 0; c < cols; ++c) {
+            float wx = b->pos.x - ((float)(cols - 1) * 1.6f) + (float)c * 3.2f;
+            draw_box_3d(r, vp, vec3_make(wx, wy, b->pos.z + b->size.z * 0.5f + 0.06f),
+                        vec3_make(1.5f, 1.7f, 0.12f), 0.0f, win_col);
+            draw_box_3d(r, vp, vec3_make(wx, wy, b->pos.z - b->size.z * 0.5f - 0.06f),
+                        vec3_make(1.5f, 1.7f, 0.12f), 0.0f, win_col);
+        }
+    }
+}
+
+/* Draws an articulated 3D human character (head, hair, torso, swinging arms & legs, held cup or parcel) */
+static void draw_articulated_human(
+    const GrindRenderer *r, Mat4 vp, Vec3 pos, float yaw_rad, float walk_phase,
+    Color4 shirt_col, Color4 pants_col, bool holding_cup, bool holding_parcel, bool envy_aura
+) {
+    Mat4 root = mat4_mul(mat4_translate(pos), mat4_rotate_y(yaw_rad));
+    float swing = sinf(walk_phase) * 0.55f;
+    Color4 skin_col = {0.92f, 0.76f, 0.64f, 1.0f};
+    Color4 hair_col = {0.18f, 0.14f, 0.12f, 1.0f};
+
+    /* Left & Right Legs (pivoting around hip y=0.75) */
+    draw_child_box(r, vp, root, vec3_make(-0.16f, 0.0f, sinf(swing) * 0.18f),
+                   vec3_make(swing * 0.5f, 0.0f, 0.0f), vec3_make(0.22f, 0.75f, 0.22f), pants_col);
+    draw_child_box(r, vp, root, vec3_make( 0.16f, 0.0f, -sinf(swing) * 0.18f),
+                   vec3_make(-swing * 0.5f, 0.0f, 0.0f), vec3_make(0.22f, 0.75f, 0.22f), pants_col);
+
+    /* Torso */
+    draw_child_box(r, vp, root, vec3_make(0.0f, 0.72f, 0.0f),
+                   vec3_make(0.0f, 0.0f, 0.0f), vec3_make(0.56f, 0.72f, 0.32f), shirt_col);
+
+    /* Head & Hair */
+    draw_child_box(r, vp, root, vec3_make(0.0f, 1.46f, 0.0f),
+                   vec3_make(0.0f, 0.0f, 0.0f), vec3_make(0.38f, 0.38f, 0.38f), skin_col);
+    draw_child_box(r, vp, root, vec3_make(0.0f, 1.78f, 0.0f),
+                   vec3_make(0.0f, 0.0f, 0.0f), vec3_make(0.42f, 0.12f, 0.42f), hair_col);
+
+    /* Left & Right Arms */
+    float r_arm_pitch = holding_cup ? -0.95f : (holding_parcel ? -0.75f : -swing * 0.6f);
+    float l_arm_pitch = holding_parcel ? -0.75f : swing * 0.6f;
+
+    draw_child_box(r, vp, root, vec3_make(-0.38f, 0.78f, 0.0f),
+                   vec3_make(l_arm_pitch, 0.0f, 0.0f), vec3_make(0.18f, 0.62f, 0.18f), shirt_col);
+    draw_child_box(r, vp, root, vec3_make( 0.38f, 0.78f, 0.0f),
+                   vec3_make(r_arm_pitch, 0.0f, 0.0f), vec3_make(0.18f, 0.62f, 0.18f), shirt_col);
+
+    /* Held Lemonade Cup in Right Hand */
+    if (holding_cup) {
+        draw_child_box(r, vp, root, vec3_make(0.38f, 1.15f, -0.35f),
+                       vec3_make(0.0f, 0.0f, 0.0f), vec3_make(0.16f, 0.24f, 0.16f),
+                       (Color4){0.98f, 0.92f, 0.18f, 1.0f});
+    }
+
+    /* Held Courier Parcel / Backpack */
+    if (holding_parcel) {
+        draw_child_box(r, vp, root, vec3_make(0.0f, 0.85f, 0.28f),
+                       vec3_make(0.0f, 0.0f, 0.0f), vec3_make(0.48f, 0.52f, 0.28f),
+                       (Color4){0.85f, 0.55f, 0.22f, 1.0f});
+    }
+
+    /* Social status ring above head for envious/hostile reaction */
+    if (envy_aura) {
+        draw_child_box(r, vp, root, vec3_make(0.0f, 2.02f, 0.0f),
+                       vec3_make(0.0f, walk_phase, 0.0f), vec3_make(0.28f, 0.12f, 0.28f),
+                       (Color4){0.95f, 0.20f, 0.20f, 1.0f});
+    }
+}
+
+/* Draws a 3D Bicycle prop (two wheels, frame, seat, handlebars, rear courier basket) */
+static void draw_bicycle_3d(const GrindRenderer *r, Mat4 vp, Vec3 pos, float yaw_rad, Color4 frame_col) {
+    Mat4 root = mat4_mul(mat4_translate(pos), mat4_rotate_y(yaw_rad));
+    Color4 tire_col = {0.14f, 0.15f, 0.17f, 1.0f};
+    /* Front & Rear Wheels */
+    draw_child_box(r, vp, root, vec3_make(0.0f, 0.0f, -0.65f), vec3_make(0,0,0), vec3_make(0.12f, 0.65f, 0.65f), tire_col);
+    draw_child_box(r, vp, root, vec3_make(0.0f, 0.0f,  0.65f), vec3_make(0,0,0), vec3_make(0.12f, 0.65f, 0.65f), tire_col);
+    /* Frame bar & fork */
+    draw_child_box(r, vp, root, vec3_make(0.0f, 0.55f, 0.0f), vec3_make(0,0,0), vec3_make(0.10f, 0.14f, 1.25f), frame_col);
+    draw_child_box(r, vp, root, vec3_make(0.0f, 0.35f, -0.60f), vec3_make(0,0,0), vec3_make(0.10f, 0.85f, 0.12f), frame_col);
+    /* Handlebars & Saddle */
+    draw_child_box(r, vp, root, vec3_make(0.0f, 1.15f, -0.60f), vec3_make(0,0,0), vec3_make(0.75f, 0.08f, 0.10f), tire_col);
+    draw_child_box(r, vp, root, vec3_make(0.0f, 0.82f,  0.25f), vec3_make(0,0,0), vec3_make(0.26f, 0.10f, 0.35f), tire_col);
+    /* Rear Cargo Crate */
+    draw_child_box(r, vp, root, vec3_make(0.0f, 0.72f,  0.68f), vec3_make(0,0,0), vec3_make(0.55f, 0.38f, 0.55f),
+                   (Color4){0.62f, 0.42f, 0.22f, 1.0f});
+}
+
 void grind_renderer_draw_frame(GrindRenderer *r, const GrindWorld *world, const GrindInputState *input) {
     if (!r->initialized) return;
 
-    glViewport(0, 0, input->viewport_w, input->viewport_h);
+    int vw_i = input->viewport_w;
+    int vh_i = input->viewport_h;
+    glViewport(0, 0, vw_i, vh_i);
 
-    /* Sky color varies by time of day and weather */
+    bool evening = (world->time_of_day_hours >= 18.0f || world->time_of_day_hours < 6.5f);
     float day_t = sinf(grind_clampf((world->time_of_day_hours - 6.0f) / 16.0f, 0.0f, 1.0f) * GRIND_PI);
-    float sky_r = 0.12f + 0.36f * day_t;
-    float sky_g = 0.16f + 0.52f * day_t;
+    float sky_r = 0.10f + 0.38f * day_t;
+    float sky_g = 0.15f + 0.54f * day_t;
     float sky_b = 0.28f + 0.64f * day_t;
     if (world->weather == WEATHER_RAINY) {
         sky_r *= 0.55f; sky_g *= 0.58f; sky_b *= 0.65f;
@@ -280,119 +447,247 @@ void grind_renderer_draw_frame(GrindRenderer *r, const GrindWorld *world, const 
     glUniform3f(r->u_light_dir_3d, cosf(sun_angle) * 0.6f, fmaxf(0.25f, sinf(sun_angle)), 0.45f);
     glUniform3f(r->u_ambient_3d, 0.35f + 0.25f * day_t, 0.36f + 0.25f * day_t, 0.42f + 0.20f * day_t);
 
-    /* 1. Ground Plane, Central Plaza & Road Network */
-    draw_box_3d(r, vp, vec3_make(0.0f, -0.5f, 0.0f), vec3_make(260.0f, 0.5f, 260.0f), 0.0f, (Color4){0.24f, 0.27f, 0.29f, 1.0f});
-    draw_box_3d(r, vp, vec3_make(0.0f, -0.08f, 0.0f), vec3_make(36.0f, 0.1f, 36.0f), 0.0f, (Color4){0.62f, 0.58f, 0.48f, 1.0f});
+    /* 1. Ground Terrain, Asphalt Roads with Lane Dashes & Central Plaza */
+    draw_box_3d(r, vp, vec3_make(0.0f, -0.5f, 0.0f), vec3_make(260.0f, 0.5f, 260.0f), 0.0f, (Color4){0.24f, 0.32f, 0.24f, 1.0f});
+    /* Main North-South and East-West Asphalt Boulevards */
+    draw_box_3d(r, vp, vec3_make(-22.0f, -0.04f, 0.0f), vec3_make(12.0f, 0.06f, 220.0f), 0.0f, (Color4){0.18f, 0.20f, 0.23f, 1.0f});
+    draw_box_3d(r, vp, vec3_make( 22.0f, -0.04f, 0.0f), vec3_make(12.0f, 0.06f, 220.0f), 0.0f, (Color4){0.18f, 0.20f, 0.23f, 1.0f});
+    draw_box_3d(r, vp, vec3_make(0.0f, -0.04f, -26.0f), vec3_make(220.0f, 0.06f, 12.0f), 0.0f, (Color4){0.18f, 0.20f, 0.23f, 1.0f});
+    draw_box_3d(r, vp, vec3_make(0.0f, -0.04f,  26.0f), vec3_make(220.0f, 0.06f, 12.0f), 0.0f, (Color4){0.18f, 0.20f, 0.23f, 1.0f});
 
-    /* 2. City Buildings & Functional Landmarks */
+    /* Yellow Road Center Dashes */
+    for (int d = -90; d <= 90; d += 12) {
+        draw_box_3d(r, vp, vec3_make(-22.0f, 0.02f, (float)d), vec3_make(0.35f, 0.02f, 4.5f), 0.0f, (Color4){0.92f, 0.80f, 0.20f, 1.0f});
+        draw_box_3d(r, vp, vec3_make( 22.0f, 0.02f, (float)d), vec3_make(0.35f, 0.02f, 4.5f), 0.0f, (Color4){0.92f, 0.80f, 0.20f, 1.0f});
+        draw_box_3d(r, vp, vec3_make((float)d, 0.02f, -26.0f), vec3_make(4.5f, 0.02f, 0.35f), 0.0f, (Color4){0.92f, 0.80f, 0.20f, 1.0f});
+        draw_box_3d(r, vp, vec3_make((float)d, 0.02f,  26.0f), vec3_make(4.5f, 0.02f, 0.35f), 0.0f, (Color4){0.92f, 0.80f, 0.20f, 1.0f});
+    }
+
+    /* Central Sunny Plaza Paving & Park Trees/Streetlamps */
+    draw_box_3d(r, vp, vec3_make(0.0f, -0.02f, 0.0f), vec3_make(32.0f, 0.08f, 32.0f), 0.0f, (Color4){0.72f, 0.68f, 0.56f, 1.0f});
+    const Vec3 tree_locs[] = {
+        {-13.0f, 0.0f, -13.0f}, { 13.0f, 0.0f, -13.0f}, {-13.0f, 0.0f,  13.0f}, { 13.0f, 0.0f,  13.0f},
+        {-38.0f, 0.0f, -35.0f}, { 48.0f, 0.0f,   5.0f}, {-45.0f, 0.0f,  20.0f}, {  8.0f, 0.0f, -45.0f}
+    };
+    for (int i = 0; i < 8; ++i) {
+        draw_tree_3d(r, vp, tree_locs[i], 1.15f);
+    }
+    const Vec3 lamp_locs[] = {
+        {-15.0f, 0.0f, -20.0f}, { 15.0f, 0.0f, -20.0f}, {-15.0f, 0.0f,  20.0f},
+        { 15.0f, 0.0f,  20.0f}, {-42.0f, 0.0f, -40.0f}, { 28.0f, 0.0f,  22.0f}
+    };
+    for (int i = 0; i < 6; ++i) {
+        draw_streetlamp_3d(r, vp, lamp_locs[i], evening);
+    }
+
+    /* 2. Detailed 3D City Buildings & Landmarks */
     for (int i = 0; i < world->building_count; ++i) {
-        const GrindBuilding *b = &world->buildings[i];
-        draw_box_3d(r, vp, b->pos, b->size, 0.0f, b->color);
-        /* Roof accent */
-        Vec3 roof_pos = vec3_make(b->pos.x, b->size.y, b->pos.z);
-        Vec3 roof_sz = vec3_make(b->size.x * 0.85f, 0.8f, b->size.z * 0.85f);
-        draw_box_3d(r, vp, roof_pos, roof_sz, 0.0f, (Color4){b->color.r * 0.7f, b->color.g * 0.7f, b->color.b * 0.7f, 1.0f});
+        draw_detailed_building(r, vp, &world->buildings[i], evening);
     }
 
-    /* 3. Found Money on Ground (Glowing Green Cash Bundle) */
+    /* 3. Display Bicycles Outside the Bike Shop */
+    draw_bicycle_3d(r, vp, vec3_make(34.0f, 0.0f, -10.0f), 0.5f, (Color4){0.18f, 0.72f, 0.92f, 1.0f});
+    draw_bicycle_3d(r, vp, vec3_make(37.0f, 0.0f, -10.0f), 0.5f, (Color4){0.92f, 0.32f, 0.25f, 1.0f});
+
+    /* 4. Found Money on Ground (Spinning/Bobbing Green Cash Bundle + Golden Beacon) */
     if (world->ground_money_available) {
-        draw_box_3d(r, vp, world->ground_money_pos, vec3_make(1.2f, 0.35f, 0.7f), 0.4f, (Color4){0.15f, 0.92f, 0.32f, 1.0f});
-        draw_box_3d(r, vp, vec3_make(world->ground_money_pos.x, 0.35f, world->ground_money_pos.z),
-                    vec3_make(0.3f, 2.2f, 0.3f), 0.0f, (Color4){0.95f, 0.92f, 0.20f, 1.0f});
+        float bob = 0.15f + 0.12f * sinf(world->anim_time_sec * 3.0f);
+        Vec3 mp = vec3_make(world->ground_money_pos.x, bob, world->ground_money_pos.z);
+        draw_box_3d(r, vp, mp, vec3_make(1.2f, 0.30f, 0.65f), world->anim_time_sec, (Color4){0.15f, 0.92f, 0.32f, 1.0f});
+        draw_box_3d(r, vp, vec3_make(mp.x, 0.0f, mp.z), vec3_make(0.25f, 2.8f, 0.25f), 0.0f, (Color4){0.98f, 0.92f, 0.22f, 1.0f});
     }
 
-    /* 4. Deployed Lemonade Stand or Flagship Storefront */
+    /* 5. Deployed Lemonade Stand (Table Legs, Tablecloth, Glass Pitcher, Lemons, Cups, Striped Umbrella) */
     const GrindPlayer *p = &world->player;
     if (p->stand_deployed) {
         Vec3 sp = p->stand_pos;
         if (p->owns_storefront) {
-            draw_box_3d(r, vp, sp, vec3_make(5.5f, 4.2f, 4.5f), 0.0f, (Color4){0.95f, 0.82f, 0.22f, 1.0f});
+            draw_box_3d(r, vp, sp, vec3_make(6.2f, 4.5f, 5.0f), 0.0f, (Color4){0.95f, 0.82f, 0.22f, 1.0f});
+            draw_box_3d(r, vp, vec3_make(sp.x, 3.2f, sp.z + 2.6f), vec3_make(5.8f, 0.6f, 1.2f), 0.0f, (Color4){0.92f, 0.25f, 0.22f, 1.0f});
         } else {
-            /* Table + Yellow Lemonade Pitcher + Umbrella */
-            draw_box_3d(r, vp, sp, vec3_make(2.4f, 1.1f, 1.4f), 0.0f, (Color4){0.65f, 0.42f, 0.22f, 1.0f});
-            draw_box_3d(r, vp, vec3_make(sp.x, 1.1f, sp.z), vec3_make(0.55f, 0.65f, 0.55f), 0.0f, (Color4){0.98f, 0.92f, 0.15f, 1.0f});
-            draw_box_3d(r, vp, vec3_make(sp.x, 2.5f, sp.z), vec3_make(3.0f, 0.35f, 3.0f), 0.0f, (Color4){0.95f, 0.28f, 0.22f, 1.0f});
+            /* 4 Table legs + Tabletop */
+            draw_box_3d(r, vp, vec3_make(sp.x - 1.0f, 0.0f, sp.z - 0.5f), vec3_make(0.15f, 1.0f, 0.15f), 0.0f, (Color4){0.35f, 0.25f, 0.18f, 1.0f});
+            draw_box_3d(r, vp, vec3_make(sp.x + 1.0f, 0.0f, sp.z - 0.5f), vec3_make(0.15f, 1.0f, 0.15f), 0.0f, (Color4){0.35f, 0.25f, 0.18f, 1.0f});
+            draw_box_3d(r, vp, vec3_make(sp.x - 1.0f, 0.0f, sp.z + 0.5f), vec3_make(0.15f, 1.0f, 0.15f), 0.0f, (Color4){0.35f, 0.25f, 0.18f, 1.0f});
+            draw_box_3d(r, vp, vec3_make(sp.x + 1.0f, 0.0f, sp.z + 0.5f), vec3_make(0.15f, 1.0f, 0.15f), 0.0f, (Color4){0.35f, 0.25f, 0.18f, 1.0f});
+            draw_box_3d(r, vp, vec3_make(sp.x, 0.95f, sp.z), vec3_make(2.6f, 0.20f, 1.5f), 0.0f, (Color4){0.95f, 0.95f, 0.92f, 1.0f});
+            /* Lemonade Pitcher & Cups on table */
+            draw_box_3d(r, vp, vec3_make(sp.x - 0.4f, 1.15f, sp.z), vec3_make(0.45f, 0.65f, 0.45f), 0.0f, (Color4){0.98f, 0.92f, 0.15f, 1.0f});
+            int visible_cups = p->stand_lemonade_stock < 6 ? p->stand_lemonade_stock : 6;
+            for (int c = 0; c < visible_cups; ++c) {
+                draw_box_3d(r, vp, vec3_make(sp.x + 0.15f + (float)c * 0.18f, 1.15f, sp.z + 0.25f),
+                            vec3_make(0.12f, 0.22f, 0.12f), 0.0f, (Color4){0.98f, 0.88f, 0.25f, 1.0f});
+            }
+            /* Umbrella Pole & Canopy */
+            draw_box_3d(r, vp, vec3_make(sp.x, 1.15f, sp.z), vec3_make(0.10f, 2.2f, 0.10f), 0.0f, (Color4){0.80f, 0.80f, 0.82f, 1.0f});
+            draw_box_3d(r, vp, vec3_make(sp.x, 3.25f, sp.z), vec3_make(3.4f, 0.35f, 3.4f), 0.0f, (Color4){0.95f, 0.26f, 0.22f, 1.0f});
         }
     }
 
-    /* 5. Active Courier Parcels & Dropoff Beacons */
+    /* 6. Active Courier Parcels & Dropoff Beacons */
     for (int i = 0; i < GRIND_MAX_CONTRACTS; ++i) {
         const GrindCourierContract *c = &world->contracts[i];
         if (!c->active) continue;
         if (!c->picked_up) {
-            draw_box_3d(r, vp, c->pickup_pos, vec3_make(1.1f, 1.1f, 1.1f), 0.2f, (Color4){0.85f, 0.58f, 0.25f, 1.0f});
+            draw_box_3d(r, vp, c->pickup_pos, vec3_make(1.0f, 0.9f, 1.0f), 0.2f, (Color4){0.82f, 0.56f, 0.26f, 1.0f});
+            /* Packing tape stripe */
+            draw_box_3d(r, vp, vec3_make(c->pickup_pos.x, 0.91f, c->pickup_pos.z), vec3_make(1.02f, 0.05f, 0.22f), 0.2f, (Color4){0.95f, 0.88f, 0.65f, 1.0f});
         } else if (c->claimed_by_player) {
-            /* Glowing dropoff beacon */
-            draw_box_3d(r, vp, c->dropoff_pos, vec3_make(1.5f, 6.0f, 1.5f), 0.0f, (Color4){0.20f, 0.95f, 0.88f, 1.0f});
+            draw_box_3d(r, vp, c->dropoff_pos, vec3_make(1.4f, 6.5f, 1.4f), world->anim_time_sec, (Color4){0.20f, 0.95f, 0.88f, 1.0f});
         }
     }
 
-    /* 6. Hired Employees Executing Task Graphs */
+    /* 7. Articulated Hired Employees Executing Task Graphs */
     for (int i = 0; i < world->employee_count; ++i) {
         const GrindEmployee *e = &world->employees[i];
         if (!e->hired) continue;
-        draw_box_3d(r, vp, e->pos, vec3_make(0.8f, 1.75f, 0.8f), 0.0f, (Color4){0.18f, 0.82f, 0.95f, 1.0f});
+        bool is_courier = (e->role == EMP_ROLE_COURIER);
+        draw_articulated_human(
+            r, vp, e->pos, e->facing_yaw, e->walk_phase,
+            (Color4){0.15f, 0.78f, 0.92f, 1.0f},
+            (Color4){0.18f, 0.22f, 0.30f, 1.0f},
+            !is_courier, is_courier, false
+        );
     }
 
-    /* 7. NPCs (Color-coded by social reaction: Green=Friendly/Respect, Red=Envious, Gold=Opportunist, Blue=Citizen) */
+    /* 8. Articulated 3D NPCs (Swinging limbs, drinking lemonade cups, envy/status indicators) */
     for (int i = 0; i < world->npc_count; ++i) {
         const GrindNpc *npc = &world->npcs[i];
-        Color4 body_col = {0.35f, 0.55f, 0.78f, 1.0f};
-        if (npc->archetype == ARCHETYPE_LOYAL_FRIEND) body_col = (Color4){0.22f, 0.82f, 0.38f, 1.0f};
-        else if (npc->archetype == ARCHETYPE_ENVIOUS_PEER) {
-            body_col = (npc->envy > 0.35f) ? (Color4){0.92f, 0.22f, 0.22f, 1.0f} : (Color4){0.68f, 0.52f, 0.32f, 1.0f};
+        Color4 shirt_col = {0.35f, 0.55f, 0.78f, 1.0f};
+        Color4 pants_col = {0.20f, 0.24f, 0.32f, 1.0f};
+        if (npc->archetype == ARCHETYPE_LOYAL_FRIEND) {
+            shirt_col = (Color4){0.22f, 0.78f, 0.38f, 1.0f};
+        } else if (npc->archetype == ARCHETYPE_ENVIOUS_PEER) {
+            shirt_col = (npc->envy > 0.35f) ? (Color4){0.88f, 0.22f, 0.22f, 1.0f} : (Color4){0.68f, 0.52f, 0.32f, 1.0f};
         } else if (npc->archetype == ARCHETYPE_OPPORTUNIST) {
-            body_col = (npc->affection > 0.3f) ? (Color4){0.95f, 0.78f, 0.18f, 1.0f} : (Color4){0.55f, 0.45f, 0.62f, 1.0f};
+            shirt_col = (npc->affection > 0.3f) ? (Color4){0.95f, 0.78f, 0.18f, 1.0f} : (Color4){0.65f, 0.35f, 0.68f, 1.0f};
         } else if (npc->archetype == ARCHETYPE_BANKER) {
-            body_col = (Color4){0.22f, 0.26f, 0.35f, 1.0f};
+            shirt_col = (Color4){0.16f, 0.20f, 0.28f, 1.0f};
+            pants_col = (Color4){0.14f, 0.16f, 0.22f, 1.0f};
         }
-        draw_box_3d(r, vp, npc->pos, vec3_make(0.75f, 1.45f, 0.75f), 0.0f, body_col);
-        draw_box_3d(r, vp, vec3_make(npc->pos.x, 1.48f, npc->pos.z), vec3_make(0.50f, 0.45f, 0.50f), 0.0f, (Color4){0.92f, 0.76f, 0.64f, 1.0f});
+
+        draw_articulated_human(
+            r, vp, npc->pos, npc->facing_yaw, npc->walk_phase,
+            shirt_col, pants_col,
+            npc->drink_timer > 0.0f, false, npc->envy > 0.45f
+        );
     }
 
-    /* 8. Player Marker (in Top-Down Map View) or First-Person Viewmodel (Handlebars / Satchel / Suit / Watch) */
+    /* 9. Player Avatar (in Top-Down Map) OR Tactile First-Person Viewmodel (Both Hands, Held Props, Bike/Car) */
     if (input->map_transition_t > 0.15f) {
-        draw_box_3d(r, vp, p->pos, vec3_make(2.2f, 3.5f, 2.2f), p->yaw_rad, (Color4){0.98f, 0.95f, 0.20f, 1.0f});
+        draw_articulated_human(
+            r, vp, p->pos, p->yaw_rad, (p->pos.x + p->pos.z) * 1.5f,
+            (Color4){0.98f, 0.92f, 0.20f, 1.0f},
+            (Color4){0.18f, 0.22f, 0.32f, 1.0f},
+            false, p->has_satchel, false
+        );
     } else {
-        /* First-Person Viewmodel in front of player camera */
-        float fx = sinf(p->yaw_rad);
-        float fz = -cosf(p->yaw_rad);
-        float rx = cosf(p->yaw_rad);
-        float rz = sinf(p->yaw_rad);
+        float stride = sinf((p->pos.x + p->pos.z) * 1.4f) * 0.03f;
+        float eye_h = (p->vehicle == VEHICLE_BICYCLE || p->vehicle == VEHICLE_CARGO_EBIKE) ? 1.85f : 1.68f;
+        Mat4 cam_root = mat4_mul(
+            mat4_translate(vec3_make(p->pos.x, p->pos.y + eye_h + stride, p->pos.z)),
+            mat4_mul(mat4_rotate_y(p->yaw_rad), mat4_rotate_x(p->pitch_rad * 0.4f))
+        );
 
-        /* Right hand / sleeve showing clothing & luxury watch */
         Color4 sleeve_col = {0.45f, 0.45f, 0.48f, 1.0f};
-        if (p->apparel == APPAREL_COURIER_GEAR) sleeve_col = (Color4){0.92f, 0.55f, 0.15f, 1.0f};
-        else if (p->apparel == APPAREL_TAILORED_SUIT) sleeve_col = (Color4){0.15f, 0.18f, 0.28f, 1.0f};
+        if (p->apparel == APPAREL_CLEAN_CASUAL) sleeve_col = (Color4){0.25f, 0.58f, 0.85f, 1.0f};
+        else if (p->apparel == APPAREL_COURIER_GEAR) sleeve_col = (Color4){0.92f, 0.55f, 0.15f, 1.0f};
+        else if (p->apparel == APPAREL_TAILORED_SUIT) sleeve_col = (Color4){0.14f, 0.18f, 0.28f, 1.0f};
+        Color4 hand_skin = {0.92f, 0.76f, 0.64f, 1.0f};
 
-        Vec3 rh_pos = vec3_make(p->pos.x + fx * 0.65f + rx * 0.35f, 1.25f, p->pos.z + fz * 0.65f + rz * 0.35f);
-        draw_box_3d(r, vp, rh_pos, vec3_make(0.16f, 0.18f, 0.38f), p->yaw_rad, sleeve_col);
+        /* Left & Right Forearms + Hands */
+        draw_child_box(r, vp, cam_root, vec3_make(-0.34f, -0.38f, -0.55f), vec3_make(0.2f, -0.15f, 0.0f), vec3_make(0.12f, 0.12f, 0.36f), sleeve_col);
+        draw_child_box(r, vp, cam_root, vec3_make(-0.32f, -0.36f, -0.74f), vec3_make(0.0f,  0.0f,  0.0f), vec3_make(0.11f, 0.11f, 0.12f), hand_skin);
+
+        draw_child_box(r, vp, cam_root, vec3_make( 0.34f, -0.38f, -0.55f), vec3_make(0.2f,  0.15f, 0.0f), vec3_make(0.12f, 0.12f, 0.36f), sleeve_col);
+        draw_child_box(r, vp, cam_root, vec3_make( 0.32f, -0.36f, -0.74f), vec3_make(0.0f,  0.0f,  0.0f), vec3_make(0.11f, 0.11f, 0.12f), hand_skin);
+
+        /* Swiss Luxury Chronograph Watch on Left Wrist */
         if (p->has_luxury_watch) {
-            Vec3 w_pos = vec3_make(rh_pos.x, 1.43f, rh_pos.z);
-            draw_box_3d(r, vp, w_pos, vec3_make(0.18f, 0.05f, 0.08f), p->yaw_rad, (Color4){0.98f, 0.84f, 0.18f, 1.0f});
+            draw_child_box(r, vp, cam_root, vec3_make(-0.33f, -0.31f, -0.66f), vec3_make(0,0,0), vec3_make(0.14f, 0.04f, 0.06f), (Color4){0.98f, 0.84f, 0.18f, 1.0f});
         }
 
-        /* Vehicle handlebars / dashboard in First-Person */
+        /* Held Physical Items in Player's Hands (Table, Ingredients, or Courier Parcel) */
+        if (p->inventory[ITEM_FOLDING_TABLE] > 0) {
+            draw_child_box(r, vp, cam_root, vec3_make(0.0f, -0.35f, -0.82f), vec3_make(0,0,0), vec3_make(0.65f, 0.42f, 0.12f), (Color4){0.65f, 0.42f, 0.22f, 1.0f});
+        } else if (p->inventory[ITEM_LEMON] > 0 || p->inventory[ITEM_SUGAR] > 0) {
+            draw_child_box(r, vp, cam_root, vec3_make(0.28f, -0.28f, -0.78f), vec3_make(0,0,0), vec3_make(0.22f, 0.18f, 0.22f), (Color4){0.98f, 0.90f, 0.18f, 1.0f});
+        }
+
+        /* Vehicle Cockpit / Handlebars in First-Person */
         if (p->vehicle == VEHICLE_BICYCLE || p->vehicle == VEHICLE_CARGO_EBIKE) {
-            Vec3 bar_pos = vec3_make(p->pos.x + fx * 0.72f, 1.22f, p->pos.z + fz * 0.72f);
-            draw_box_3d(r, vp, bar_pos, vec3_make(0.75f, 0.06f, 0.08f), p->yaw_rad, (Color4){0.20f, 0.72f, 0.90f, 1.0f});
-        } else if (p->vehicle == VEHICLE_SPORTS_CAR) {
-            Vec3 hood_pos = vec3_make(p->pos.x + fx * 1.1f, 1.05f, p->pos.z + fz * 1.1f);
-            draw_box_3d(r, vp, hood_pos, vec3_make(1.4f, 0.18f, 0.9f), p->yaw_rad, (Color4){0.92f, 0.15f, 0.18f, 1.0f});
+            Color4 bike_c = (p->vehicle == VEHICLE_CARGO_EBIKE) ? (Color4){0.20f, 0.88f, 0.48f, 1.0f} : (Color4){0.20f, 0.72f, 0.92f, 1.0f};
+            draw_child_box(r, vp, cam_root, vec3_make(0.0f, -0.42f, -0.68f), vec3_make(0,0,0), vec3_make(0.76f, 0.05f, 0.06f), (Color4){0.18f, 0.20f, 0.22f, 1.0f});
+            draw_child_box(r, vp, cam_root, vec3_make(0.0f, -0.75f, -0.68f), vec3_make(0,0,0), vec3_make(0.08f, 0.35f, 0.08f), bike_c);
+        } else if (p->vehicle == VEHICLE_DELIVERY_VAN || p->vehicle == VEHICLE_SPORTS_CAR) {
+            Color4 car_c = (p->vehicle == VEHICLE_SPORTS_CAR) ? (Color4){0.92f, 0.16f, 0.18f, 1.0f} : (Color4){0.88f, 0.88f, 0.90f, 1.0f};
+            draw_child_box(r, vp, cam_root, vec3_make(0.0f, -0.52f, -0.95f), vec3_make(0,0,0), vec3_make(1.4f, 0.16f, 0.65f), car_c);
+            draw_child_box(r, vp, cam_root, vec3_make(0.0f, -0.38f, -0.62f), vec3_make(0.4f,0,0), vec3_make(0.36f, 0.36f, 0.05f), (Color4){0.15f, 0.16f, 0.18f, 1.0f});
         }
     }
 
-    /* ================= 2D HUD & ADAPTIVE ON-SCREEN TOUCH CONTROLS ================= */
+    /* ================= 2D HUD, 3D WORLD LABELS & TOUCH CONTROLS ================= */
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     g_vert_2d_count = 0;
-    float vw = (float)input->viewport_w;
-    float vh = (float)input->viewport_h;
+    float vw = (float)vw_i;
+    float vh = (float)vh_i;
 
-    /* Top Status Bar */
-    push_quad_2d(10.0f, 10.0f, vw - 20.0f, 76.0f, (Color4){0.06f, 0.08f, 0.12f, 0.82f});
+    /* A. 3D World-Space Projected Landmark Labels, Stand Price Sign & Speech Bubbles */
+    for (int i = 0; i < ZONE_COUNT; ++i) {
+        const GrindBuilding *b = &world->buildings[i];
+        float d = vec3_dist_xz(p->pos, b->pos);
+        if (d < 85.0f || input->map_transition_t > 0.3f) {
+            Vec3 label_pos = vec3_make(b->pos.x, b->size.y + 2.8f, b->pos.z);
+            draw_world_label_2d(label_pos, vp, vw_i, vh_i, 2.0f,
+                                (Color4){0.05f, 0.08f, 0.14f, 0.78f},
+                                (Color4){0.98f, 0.94f, 0.65f, 1.0f}, b->name);
+        }
+    }
+
+    if (world->ground_money_available) {
+        Vec3 mp = vec3_make(world->ground_money_pos.x, 3.2f, world->ground_money_pos.z);
+        draw_world_label_2d(mp, vp, vw_i, vh_i, 2.2f,
+                            (Color4){0.08f, 0.35f, 0.14f, 0.88f},
+                            (Color4){0.55f, 1.0f, 0.65f, 1.0f}, "FOUND CASH $12 [PRESS E]");
+    }
+
+    if (p->stand_deployed) {
+        char stand_tag[64];
+        snprintf(stand_tag, sizeof(stand_tag), "LEMONADE $%.2f (%d CUPS)", p->stand_price, p->stand_lemonade_stock);
+        Vec3 sp = vec3_make(p->stand_pos.x, p->owns_storefront ? 5.2f : 4.1f, p->stand_pos.z);
+        draw_world_label_2d(sp, vp, vw_i, vh_i, 2.1f,
+                            (Color4){0.22f, 0.16f, 0.04f, 0.85f},
+                            (Color4){1.0f, 0.92f, 0.25f, 1.0f}, stand_tag);
+    }
+
+    if (world->sale_popup_timer > 0.0f) {
+        char sale_txt[32];
+        snprintf(sale_txt, sizeof(sale_txt), "+$%.2f SALE!", world->sale_popup_amount);
+        draw_world_label_2d(world->sale_popup_pos, vp, vw_i, vh_i, 2.5f,
+                            (Color4){0.06f, 0.38f, 0.12f, 0.90f},
+                            (Color4){0.45f, 1.0f, 0.55f, 1.0f}, sale_txt);
+    }
+
+    /* Named NPC Speech / Status Bubbles when within 28m */
+    for (int i = 0; i < 4; ++i) {
+        const GrindNpc *npc = &world->npcs[i];
+        float d = vec3_dist_xz(p->pos, npc->pos);
+        if (d < 28.0f) {
+            Vec3 head_pos = vec3_make(npc->pos.x, 2.35f, npc->pos.z);
+            Color4 tag_col = (npc->envy > 0.4f)
+                ? (Color4){1.0f, 0.55f, 0.55f, 1.0f}
+                : (Color4){0.75f, 0.98f, 0.82f, 1.0f};
+            draw_world_label_2d(head_pos, vp, vw_i, vh_i, 1.9f,
+                                (Color4){0.06f, 0.08f, 0.12f, 0.82f}, tag_col,
+                                d < 9.0f ? npc->last_reaction : npc->name);
+        }
+    }
+
+    /* B. Top Status Bar */
+    push_quad_2d(10.0f, 10.0f, vw - 20.0f, 76.0f, (Color4){0.06f, 0.08f, 0.12f, 0.84f});
 
     char line1[160];
     int hr = (int)world->time_of_day_hours;
@@ -411,7 +706,7 @@ void grind_renderer_draw_frame(GrindRenderer *r, const GrindWorld *world, const 
 
     draw_text_2d(22.0f, 66.0f, 2.2f, (Color4){0.55f, 0.98f, 0.62f, 1.0f}, world->status_message);
 
-    /* Social Circle Reaction Panel (Top-Right) */
+    /* C. Social Circle Reaction Panel (Top-Right) */
     push_quad_2d(vw - 360.0f, 94.0f, 350.0f, 108.0f, (Color4){0.06f, 0.08f, 0.12f, 0.76f});
     draw_text_2d(vw - 348.0f, 102.0f, 2.2f, (Color4){0.95f, 0.82f, 0.35f, 1.0f}, "SOCIAL REACTIONS TO WEALTH:");
     for (int i = 0; i < 4; ++i) {
@@ -422,7 +717,7 @@ void grind_renderer_draw_frame(GrindRenderer *r, const GrindWorld *world, const 
         draw_text_2d(vw - 348.0f, 122.0f + i * 19.0f, 2.0f, scol, sline);
     }
 
-    /* First-Person Crosshair */
+    /* D. Crosshair or Map Header */
     if (input->map_transition_t < 0.3f) {
         push_quad_2d(vw * 0.5f - 6.0f, vh * 0.5f - 1.0f, 12.0f, 2.0f, (Color4){1.0f, 1.0f, 1.0f, 0.75f});
         push_quad_2d(vw * 0.5f - 1.0f, vh * 0.5f - 6.0f, 2.0f, 12.0f, (Color4){1.0f, 1.0f, 1.0f, 0.75f});
@@ -430,9 +725,8 @@ void grind_renderer_draw_frame(GrindRenderer *r, const GrindWorld *world, const 
         draw_text_2d(vw * 0.5f - 140.0f, 98.0f, 2.8f, (Color4){0.98f, 0.92f, 0.25f, 1.0f}, "3D TACTICAL MANAGEMENT MAP");
     }
 
-    /* Adaptive On-Screen Touch Controls for Small Devices / Web Mobile */
+    /* E. Adaptive On-Screen Touch Controls for Small Devices / Web Mobile */
     if (input->touch_controls_active) {
-        /* Left Virtual Thumbstick Base + Knob */
         float jx = input->joy_origin_x * vw;
         float jy = input->joy_origin_y * vh;
         float jr = input->joy_radius * vh;
@@ -444,7 +738,6 @@ void grind_renderer_draw_frame(GrindRenderer *r, const GrindWorld *world, const 
         push_quad_2d(kx - kr, ky - kr, kr * 2.0f, kr * 2.0f, (Color4){0.25f, 0.88f, 0.98f, 0.68f});
         draw_text_2d(jx - 28.0f, jy + jr + 8.0f, 2.0f, (Color4){0.85f, 0.92f, 0.98f, 0.85f}, "MOVE");
 
-        /* Right-Side Action Buttons */
         for (int i = 0; i < TOUCH_BTN_COUNT; ++i) {
             const GrindTouchButton *b = &input->buttons[i];
             float bx = b->cx * vw;

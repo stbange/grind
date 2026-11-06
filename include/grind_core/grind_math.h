@@ -183,6 +183,28 @@ static inline Mat4 mat4_rotate_y(float rad) {
     return r;
 }
 
+static inline Mat4 mat4_rotate_x(float rad) {
+    Mat4 r = mat4_identity();
+    float c = cosf(rad);
+    float s = sinf(rad);
+    r.m[5] = c;
+    r.m[6] = s;
+    r.m[9] = -s;
+    r.m[10] = c;
+    return r;
+}
+
+static inline Mat4 mat4_rotate_z(float rad) {
+    Mat4 r = mat4_identity();
+    float c = cosf(rad);
+    float s = sinf(rad);
+    r.m[0] = c;
+    r.m[1] = s;
+    r.m[4] = -s;
+    r.m[5] = c;
+    return r;
+}
+
 static inline Mat4 mat4_perspective(float fov_y_rad, float aspect, float z_near, float z_far) {
     Mat4 r = {{0}};
     float f = 1.0f / tanf(fov_y_rad * 0.5f);
@@ -213,6 +235,32 @@ static inline Mat4 mat4_look_at(Vec3 eye, Vec3 center, Vec3 up) {
     r.m[13] = -vec3_dot(u, eye);
     r.m[14] = vec3_dot(f, eye);
     return r;
+}
+
+/* Projects a 3D world position into 2D viewport pixel coordinates (top-left origin).
+ * Returns true if the point is in front of the camera and inside the view frustum. */
+static inline bool grind_project_world_to_screen(
+    Vec3 world_pos, Mat4 vp, int viewport_w, int viewport_h, Vec2 *out_screen
+) {
+    float cx = vp.m[0] * world_pos.x + vp.m[4] * world_pos.y + vp.m[8]  * world_pos.z + vp.m[12];
+    float cy = vp.m[1] * world_pos.x + vp.m[5] * world_pos.y + vp.m[9]  * world_pos.z + vp.m[13];
+    float cz = vp.m[2] * world_pos.x + vp.m[6] * world_pos.y + vp.m[10] * world_pos.z + vp.m[14];
+    float cw = vp.m[3] * world_pos.x + vp.m[7] * world_pos.y + vp.m[11] * world_pos.z + vp.m[15];
+
+    if (cw <= 0.1f) return false;
+    float inv_w = 1.0f / cw;
+    float ndc_x = cx * inv_w;
+    float ndc_y = cy * inv_w;
+    float ndc_z = cz * inv_w;
+
+    if (ndc_x < -1.15f || ndc_x > 1.15f || ndc_y < -1.15f || ndc_y > 1.15f || ndc_z > 1.0f) {
+        return false;
+    }
+    if (out_screen) {
+        out_screen->x = (ndc_x * 0.5f + 0.5f) * (float)viewport_w;
+        out_screen->y = (1.0f - (ndc_y * 0.5f + 0.5f)) * (float)viewport_h;
+    }
+    return true;
 }
 
 #endif /* GRIND_MATH_H */

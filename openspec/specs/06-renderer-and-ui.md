@@ -18,11 +18,15 @@ Defines the cross-platform SDL2 + OpenGL 3D rendering pipeline, the First-Person
   - Player position, active stands/storefronts, hired couriers moving along routes in real time, available parcel contracts, and property lots available for lease/investment.
   - Allows quick commands for hiring, setting lemonade prices, launching marketing campaigns, and investing.
 
-## 3. Procedural Low-Poly 3D Geometry & Shaders
-### REQ-RND-003: Cross-Platform Shader Pipeline
+## 3. Procedural Low-Poly 3D Geometry, Articulated Characters & World Labels
+### REQ-RND-003: Cross-Platform Shader Pipeline & Architectural Detail
 - Uses a single unified shader pair compatible with **OpenGL 3.3 Core** (Linux/Windows) and **OpenGL ES 3.0 / WebGL 2.0** (Emscripten):
   - Directional sunlight + hemisphere sky/ground ambient lighting that shifts color temperature across morning, noon, sunset, and night.
-  - Procedural 3D meshes generated in C at startup: city roads, sidewalks, distinct building blocks by district, trees, folding tables with pitchers/umbrellas, parcels, bicycles, vans, sports cars, and articulated NPCs whose headband/aura and body posture reflect their relationship state (`Affection`, `Envy`, `Respect`) toward the player.
+  - Detailed procedural 3D meshes generated in C:
+    - **City Architecture:** Multi-story buildings with entrance doors, striped shop awnings, rooftop structures, and window grids that illuminate at dusk/night.
+    - **Streetscape:** Asphalt avenues with lane markings, raised sidewalks, trees, benches, and streetlamps.
+    - **Articulated 3D Characters:** Multi-limb NPCs and employees (head, torso, swinging arms and legs driven by `walk_phase`, holding lemonade cups after purchase or carrying courier backpacks/parcels).
+    - **3D World-Space Labels & Speech Bubbles:** Screen-projected 3D tags (`grind_project_world_to_screen`) displaying landmark names above buildings, stand price/stock boards, `+$` sale popups, and NPC speech bubbles when in conversation range.
 
 ## 4. Adaptive On-Screen Controls for Web & Small Devices
 ### REQ-UI-001: Automatic Small-Device & Touch Detection

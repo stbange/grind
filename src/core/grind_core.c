@@ -514,6 +514,9 @@ bool grind_action_deliver_contract_parcel(GrindWorld *world, int contract_idx) {
     p->deliveries_completed_total++;
     p->skill_logistics = grind_clampf(p->skill_logistics + 0.28f, 0.0f, 10.0f);
     p->business_reputation = grind_clampf(p->business_reputation + 2.5f, 0.0f, 100.0f);
+    world->sale_popup_timer = 2.5f;
+    world->sale_popup_pos = vec3_make(c->dropoff_pos.x, 2.8f, c->dropoff_pos.z);
+    world->sale_popup_amount = payout;
 
     char buf[GRIND_MAX_LOG_LEN];
     snprintf(buf, sizeof(buf), "Delivered Parcel #%d! Earned $%.2f (+Logistics Skill).", c->id, payout);
@@ -998,6 +1001,11 @@ void grind_world_tick(GrindWorld *world, float sim_minutes) {
     GrindPlayer *p = &world->player;
 
     world->time_of_day_hours += dt_hours;
+    world->anim_time_sec += sim_minutes * 0.6f;
+    if (world->sale_popup_timer > 0.0f) {
+        world->sale_popup_timer = grind_clampf(world->sale_popup_timer - sim_minutes * 0.25f, 0.0f, 5.0f);
+        world->sale_popup_pos.y += sim_minutes * 0.12f;
+    }
     if (world->time_of_day_hours >= 23.5f) {
         grind_action_sleep_overnight(world);
         return;
@@ -1062,8 +1070,11 @@ void grind_world_tick(GrindWorld *world, float sim_minutes) {
                 int next_z = (int)(grind_rng_u32(&world->rng) % ZONE_COUNT);
                 e->target_pos = world->buildings[next_z].pos;
             } else {
-                Vec3 step = vec3_scale(vec3_norm(to_target), 12.0f * dt_hours * 4.0f);
+                Vec3 dir = vec3_norm(to_target);
+                e->facing_yaw = atan2f(dir.x, -dir.z);
+                Vec3 step = vec3_scale(dir, 12.0f * dt_hours * 4.0f);
                 e->pos = vec3_add(e->pos, step);
+                e->walk_phase += vec3_len(step) * 1.8f;
             }
             if (e->task_progress >= 0.45f) {
                 e->task_progress -= 0.45f;
@@ -1080,6 +1091,9 @@ void grind_world_tick(GrindWorld *world, float sim_minutes) {
     for (int i = 0; i < world->npc_count; ++i) {
         GrindNpc *npc = &world->npcs[i];
         npc->thirst = grind_clampf(npc->thirst + dt_hours * 0.18f * (world->ambient_temp_c / 22.0f), 0.0f, 1.0f);
+        if (npc->drink_timer > 0.0f) {
+            npc->drink_timer = grind_clampf(npc->drink_timer - dt_hours, 0.0f, 2.0f);
+        }
 
         Vec3 diff = vec3_sub(npc->target_pos, npc->pos);
         float dist = vec3_len(diff);
@@ -1099,9 +1113,12 @@ void grind_world_tick(GrindWorld *world, float sim_minutes) {
                 );
             }
         } else {
-            Vec3 step = vec3_scale(vec3_norm(diff), npc->walk_speed * (sim_minutes * 0.8f));
+            Vec3 ndir = vec3_norm(diff);
+            npc->facing_yaw = atan2f(ndir.x, -ndir.z);
+            Vec3 step = vec3_scale(ndir, npc->walk_speed * (sim_minutes * 0.8f));
             if (vec3_len(step) > dist) step = diff;
             npc->pos = vec3_add(npc->pos, step);
+            npc->walk_phase += vec3_len(step) * 2.2f;
         }
 
         /* Evaluate Point-of-Sale if stand is deployed and stocked */
@@ -1113,12 +1130,16 @@ void grind_world_tick(GrindWorld *world, float sim_minutes) {
                 if (u > 0.0f && npc->cash >= p->stand_price) {
                     npc->cash -= p->stand_price;
                     npc->thirst = grind_clampf(npc->thirst - 0.65f, 0.0f, 1.0f);
+                    npc->drink_timer = 0.8f;
                     p->cash += p->stand_price;
                     world->revenue_today += p->stand_price;
                     p->stand_lemonade_stock--;
                     p->cups_sold_total++;
                     p->skill_persuasion = grind_clampf(p->skill_persuasion + 0.03f, 0.0f, 10.0f);
                     p->business_reputation = grind_clampf(p->business_reputation + 0.35f, 0.0f, 100.0f);
+                    world->sale_popup_timer = 2.2f;
+                    world->sale_popup_pos = vec3_make(p->stand_pos.x, 3.0f, p->stand_pos.z);
+                    world->sale_popup_amount = p->stand_price;
                 }
             }
         }
