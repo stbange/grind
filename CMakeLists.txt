@@ -54,6 +54,7 @@ if(GRIND_BUILD_APP)
             "-sMIN_WEBGL_VERSION=2"
             "-sMAX_WEBGL_VERSION=2"
             "-sALLOW_MEMORY_GROWTH=1"
+            "-sSTACK_SIZE=1048576"
             "--shell-file" "${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html"
         )
     else()

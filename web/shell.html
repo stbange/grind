@@ -37,9 +37,12 @@
         /* Capture mouse via HTML5 Pointer Lock on left/right click when on desktop viewports */
         canvas.addEventListener("mousedown", function(e) {
           canvas.focus();
-          if (window.innerWidth >= 900 && !('ontouchstart' in window)) {
+          if (!Module.tabletOpen && window.innerWidth >= 900 && !('ontouchstart' in window)) {
             if (document.pointerLockElement !== canvas && canvas.requestPointerLock) {
-              canvas.requestPointerLock();
+              var lockPromise = canvas.requestPointerLock();
+              if (lockPromise && lockPromise.catch) {
+                lockPromise.catch(function() {});
+              }
             }
           }
         }, false);

@@ -9,6 +9,9 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <emscripten/html5.h>
+EM_JS(void, grind_web_set_tablet_open, (int open), {
+    Module.tabletOpen = !!open;
+})
 #endif
 
 typedef struct {
@@ -138,7 +141,14 @@ static void process_events(GrindApp *app) {
                 if (ev.key.repeat) break;
                 switch (ev.key.keysym.sym) {
                     case SDLK_ESCAPE:
+#ifdef __EMSCRIPTEN__
+                        app->mouse_captured = false;
+                        app->input.biz_drawer_open = false;
+                        SDL_SetRelativeMouseMode(SDL_FALSE);
+                        emscripten_exit_pointerlock();
+#else
                         app->input.quit_requested = true;
+#endif
                         break;
                     case SDLK_e:
                     case SDLK_SPACE:
@@ -146,6 +156,13 @@ static void process_events(GrindApp *app) {
                         break;
                     case SDLK_b:
                         app->input.buttons[TOUCH_BTN_BIZ_MENU].just_pressed = true;
+                        if (!app->input.biz_drawer_open) {
+                            app->mouse_captured = false;
+                            SDL_SetRelativeMouseMode(SDL_FALSE);
+#ifdef __EMSCRIPTEN__
+                            emscripten_exit_pointerlock();
+#endif
+                        }
                         break;
                     case SDLK_m:
                     case SDLK_TAB:
@@ -206,6 +223,9 @@ static void step_frame(void *userdata) {
 
     process_events(app);
     grind_input_apply_to_world(&app->input, &app->world, dt_sec);
+#ifdef __EMSCRIPTEN__
+    grind_web_set_tablet_open(app->input.biz_drawer_open ? 1 : 0);
+#endif
 
     /* 1 real second = 8 simulated minutes during interactive play */
     grind_world_tick(&app->world, dt_sec * 8.0f);
@@ -224,6 +244,8 @@ static void step_frame(void *userdata) {
     }
 #endif
 }
+
+static GrindApp g_app;
 
 int main(int argc, char **argv) {
     bool force_touch = false;
@@ -262,34 +284,36 @@ int main(int argc, char **argv) {
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
-    GrindApp app;
-    memset(&app, 0, sizeof(app));
-    app.max_frames = max_frames;
+    memset(&g_app, 0, sizeof(g_app));
+    g_app.max_frames = max_frames;
 
-    app.window = SDL_CreateWindow(
+    g_app.window = SDL_CreateWindow(
         "The Grind - 3D First-Principles Business & Life Sim",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         win_w, win_h,
         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN
     );
-    if (!app.window) {
+    if (!g_app.window) {
         fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
         SDL_Quit();
         return 1;
     }
 
-    app.gl_ctx = SDL_GL_CreateContext(app.window);
-    if (!app.gl_ctx) {
+    g_app.gl_ctx = SDL_GL_CreateContext(g_app.window);
+    if (!g_app.gl_ctx) {
         fprintf(stderr, "SDL_GL_CreateContext failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(app.window);
+        SDL_DestroyWindow(g_app.window);
         SDL_Quit();
         return 1;
     }
 
+#ifndef __EMSCRIPTEN__
     SDL_GL_SetSwapInterval(1);
-    grind_world_init(&app.world, 0xC0FFEE123456ULL);
-    grind_input_init(&app.input, win_w, win_h, force_touch);
-    grind_renderer_init(&app.renderer);
+#endif
+    grind_world_init(&g_app.world, 0xC0FFEE123456ULL);
+    grind_input_init(&g_app.input, win_w, win_h, force_touch);
+    g_app.mouse_captured = !g_app.input.touch_controls_active;
+    grind_renderer_init(&g_app.renderer);
 
     SDL_AudioSpec want = {0}, have = {0};
     want.freq = 44100;
@@ -297,28 +321,28 @@ int main(int argc, char **argv) {
     want.channels = 1;
     want.samples = 1024;
     want.callback = audio_synth_callback;
-    want.userdata = &app;
-    app.audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    if (app.audio_dev != 0) {
-        SDL_PauseAudioDevice(app.audio_dev, 0);
+    want.userdata = &g_app;
+    g_app.audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+    if (g_app.audio_dev != 0) {
+        SDL_PauseAudioDevice(g_app.audio_dev, 0);
     }
 
-    app.last_ticks = SDL_GetTicks();
+    g_app.last_ticks = SDL_GetTicks();
 
 #ifdef __EMSCRIPTEN__
-    emscripten_set_main_loop_arg(step_frame, &app, 0, 1);
+    emscripten_set_main_loop_arg(step_frame, &g_app, 0, 1);
 #else
-    while (!app.input.quit_requested) {
-        step_frame(&app);
+    while (!g_app.input.quit_requested) {
+        step_frame(&g_app);
     }
 #endif
 
-    if (app.audio_dev != 0) {
-        SDL_CloseAudioDevice(app.audio_dev);
+    if (g_app.audio_dev != 0) {
+        SDL_CloseAudioDevice(g_app.audio_dev);
     }
-    grind_renderer_shutdown(&app.renderer);
-    SDL_GL_DeleteContext(app.gl_ctx);
-    SDL_DestroyWindow(app.window);
+    grind_renderer_shutdown(&g_app.renderer);
+    SDL_GL_DeleteContext(g_app.gl_ctx);
+    SDL_DestroyWindow(g_app.window);
     SDL_Quit();
     return 0;
 }

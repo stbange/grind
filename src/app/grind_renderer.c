@@ -1,5 +1,6 @@
 #include "grind_app/grind_renderer.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 
@@ -53,17 +54,15 @@ static const char *k_fs_3d =
     "    float ndl = max(dot(n, normalize(u_light_dir)), 0.0);\n"
     "    float hemi = 0.5 + 0.5 * n.y;\n"
     "    vec3 light = u_ambient * (0.68 + 0.32 * hemi) + vec3(0.96, 0.93, 0.86) * ndl * 0.78;\n"
+    "    vec3 tex_c = texture(u_tex, v_uv).rgb;\n"
     "    vec3 base = u_color.rgb;\n"
     "    if (u_tex_mode == 1) {\n"
-    "        vec3 tex_c = texture(u_tex, v_uv).rgb;\n"
     "        base = mix(base, tex_c * base * 1.35, 0.88);\n"
     "    } else if (u_tex_mode == 2) {\n"
-    "        vec3 sc = texture(u_tex, v_uv).rgb;\n"
-    "        /* Chroma-key discard for pure magenta (#FF00FF) background in Nano Banana sprite sheet */\n"
-    "        if (sc.r > 0.65 && sc.b > 0.65 && sc.g < 0.38 && (sc.r + sc.b - sc.g * 2.0) > 0.80) {\n"
+    "        if (tex_c.r > 0.65 && tex_c.b > 0.65 && tex_c.g < 0.38 && (tex_c.r + tex_c.b - tex_c.g * 2.0) > 0.80) {\n"
     "            discard;\n"
     "        }\n"
-    "        frag_color = vec4(sc * (0.72 + 0.28 * light), 1.0);\n"
+    "        frag_color = vec4(tex_c * (0.72 + 0.28 * light), 1.0);\n"
     "        return;\n"
     "    }\n"
     "    if (v_world_pos.y < -0.02 && n.y > 0.9) {\n"
@@ -153,10 +152,12 @@ static unsigned int link_program(const char *vs_src, const char *fs_src) {
     return p;
 }
 
+/* Static BSS buffer so procedural texture generation uses zero WASM/C stack space */
+static uint8_t s_atlas_pix[256 * 256 * 4];
+
 /* Generates a rich procedural 4x4 fallback texture atlas in C (used on native Linux/Windows or while web images load) */
 static unsigned int create_procedural_city_atlas(void) {
     enum { W = 256, H = 256, T = 64 };
-    uint8_t pix[W * H * 4];
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
             int tx = x / T;
@@ -195,10 +196,10 @@ static unsigned int create_procedural_city_atlas(void) {
                 r = 35 + wv; g = 200 + wv / 2; b = 235;
             }
             int idx = (y * W + x) * 4;
-            pix[idx + 0] = r;
-            pix[idx + 1] = g;
-            pix[idx + 2] = b;
-            pix[idx + 3] = 255;
+            s_atlas_pix[idx + 0] = r;
+            s_atlas_pix[idx + 1] = g;
+            s_atlas_pix[idx + 2] = b;
+            s_atlas_pix[idx + 3] = 255;
         }
     }
     unsigned int tex = 0;
@@ -208,31 +209,104 @@ static unsigned int create_procedural_city_atlas(void) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, pix);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, s_atlas_pix);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    return tex;
+}
+
+/* Generates a procedural 4x4 chroma-keyed sprite sheet (magenta background) for native or pre-load fallback */
+static unsigned int create_procedural_sprites_atlas(void) {
+    enum { W = 256, H = 256, T = 64 };
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            int tx = x / T;
+            int ty = y / T;
+            int lx = x % T;
+            int ly = y % T;
+            int tile = ty * 4 + tx;
+            /* Pure magenta chroma-key transparent background */
+            uint8_t r = 255, g = 0, b = 255;
+            int dx = lx - 32;
+            int dy = ly - 32;
+            if (tile < 8) {
+                /* Character sprite silhouette (head + torso) */
+                if (dx * dx + (ly - 16) * (ly - 16) <= 90) {
+                    r = 235; g = 190; b = 155;
+                } else if (abs(dx) <= 10 && ly >= 25 && ly <= 46) {
+                    r = (uint8_t)(60 + (tile * 45) % 180);
+                    g = (uint8_t)(120 + (tile * 70) % 120);
+                    b = (uint8_t)(210 - (tile * 30) % 140);
+                }
+            } else if (tile == 14) {
+                /* Tree foliage canopy + trunk */
+                if (dx * dx + (ly - 24) * (ly - 24) <= 360) {
+                    r = 55; g = 168; b = 65;
+                } else if (abs(dx) <= 4 && ly >= 36 && ly <= 58) {
+                    r = 125; g = 85; b = 48;
+                }
+            } else if (tile == 15) {
+                /* Streetlamp post + glowing lantern */
+                if (abs(dx) <= 2 && ly >= 14 && ly <= 58) {
+                    r = 60; g = 65; b = 72;
+                } else if (dx * dx + (ly - 14) * (ly - 14) <= 36) {
+                    r = 250; g = 230; b = 95;
+                }
+            } else if (dx * dx + dy * dy <= 196) {
+                /* Props (lemonade umbrella, cash stack, parcel, bicycle) */
+                r = 240; g = 205; b = 65;
+            }
+            int idx = (y * W + x) * 4;
+            s_atlas_pix[idx + 0] = r;
+            s_atlas_pix[idx + 1] = g;
+            s_atlas_pix[idx + 2] = b;
+            s_atlas_pix[idx + 3] = 255;
+        }
+    }
+    unsigned int tex = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, s_atlas_pix);
     glGenerateMipmap(GL_TEXTURE_2D);
     return tex;
 }
 
 #ifdef __EMSCRIPTEN__
-/* On Web (GitHub Pages), asynchronously load the Nano Banana generated atlases directly via browser Image decoding */
+/* On Web (GitHub Pages), asynchronously load the Nano Banana generated atlases resampled to 1024x1024 POT */
 EM_JS(void, grind_web_load_atlas_Async, (unsigned int tex_id, const char *url_ptr, int linear_filter), {
-    var url = UTF8ToString(url_ptr);
-    var img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = function() {
-        var gl = Module.ctx;
-        if (!gl) return;
-        var tex = GL.textures[tex_id];
-        if (!tex) return;
-        gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-        gl.generateMipmap(gl.TEXTURE_2D);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, linear_filter ? gl.LINEAR_MIPMAP_LINEAR : gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, linear_filter ? gl.LINEAR : gl.NEAREST);
-    };
-    img.src = url;
-});
+    try {
+        var url = UTF8ToString(url_ptr);
+        var img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = function() {
+            try {
+                var gl = (typeof GLctx !== "undefined" && GLctx) ? GLctx : Module.ctx;
+                if (!gl || typeof GL === "undefined" || !GL.textures) return;
+                var tex = GL.textures[tex_id];
+                if (!tex) return;
+                var pot = document.createElement("canvas");
+                pot.width = 1024;
+                pot.height = 1024;
+                var ctx2d = pot.getContext("2d");
+                ctx2d.drawImage(img, 0, 0, 1024, 1024);
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, pot);
+                gl.generateMipmap(gl.TEXTURE_2D);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, linear_filter ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            } catch (e) {
+                console.warn("WebGL atlas upload warning:", e);
+            }
+        };
+        img.src = url;
+    } catch (e) {
+        console.warn("WebGL atlas fetch warning:", e);
+    }
+})
 #endif
 
 typedef struct {
@@ -366,7 +440,7 @@ bool grind_renderer_init(GrindRenderer *r) {
     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex2D), (void *)(2 * sizeof(float)));
 
     r->tex_city = create_procedural_city_atlas();
-    r->tex_sprites = create_procedural_city_atlas();
+    r->tex_sprites = create_procedural_sprites_atlas();
 
 #ifdef __EMSCRIPTEN__
     grind_web_load_atlas_Async(r->tex_city, "assets/textures/city_atlas.jpg", 1);
@@ -399,7 +473,7 @@ static void set_atlas_tile(const GrindRenderer *r, int mode, int tile_idx) {
     if (mode > 0) {
         int col = tile_idx & 3;
         int row = (tile_idx >> 2) & 3;
-        glUniform4f(r->u_uv_rect_3d, (float)col * 0.25f + 0.006f, (float)row * 0.25f + 0.006f, 0.238f, 0.238f);
+        glUniform4f(r->u_uv_rect_3d, (float)col * 0.25f + 0.014f, (float)row * 0.25f + 0.014f, 0.222f, 0.222f);
     } else {
         glUniform4f(r->u_uv_rect_3d, 0.0f, 0.0f, 1.0f, 1.0f);
     }

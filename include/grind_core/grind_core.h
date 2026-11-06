@@ -130,7 +130,7 @@ typedef struct {
     float trust;            /*  0.0 to +1.0 */
     float envy;             /*  0.0 to +1.0 */
     float brand_awareness;  /*  0.0 to +1.0 */
-    char last_reaction[64];
+    char last_reaction[96];
 } GrindNpc;
 
 /* Hired Employee executing a delegated Task Graph */
