@@ -43,9 +43,9 @@ static void test_physics_and_containers(void) {
     ASSERT_NEAR(grind_player_max_volume_l(&w), 5.0f, 0.01f, "Initial bare-hand volume limit");
 
     w.player.cash = 500.0f;
-    /* Try buying 4 Water Jugs (8kg, 8L) with bare hands -> must fail physical capacity */
-    bool bought_over_cap = grind_action_buy_item(&w, ITEM_WATER_JUG, 4);
-    ASSERT_TRUE(!bought_over_cap, "Cannot carry 4 water jugs in bare hands");
+    /* Try buying 5 Water Jugs (7.5kg, 7.5L) with bare hands -> must fail physical capacity */
+    bool bought_over_cap = grind_action_buy_item(&w, ITEM_WATER_JUG, 5);
+    ASSERT_TRUE(!bought_over_cap, "Cannot carry 5 water jugs in bare hands");
 
     /* Buying Satchel (+18kg, +30L) enables carrying bulk goods */
     bool satchel_ok = grind_action_buy_satchel(&w);
@@ -53,8 +53,8 @@ static void test_physics_and_containers(void) {
     ASSERT_NEAR(grind_player_max_mass_kg(&w), 24.0f, 0.01f, "Satchel expands mass capacity");
     ASSERT_NEAR(grind_player_max_volume_l(&w), 35.0f, 0.01f, "Satchel expands volume capacity");
 
-    bool bought_with_satchel = grind_action_buy_item(&w, ITEM_WATER_JUG, 4);
-    ASSERT_TRUE(bought_with_satchel, "Can carry 4 water jugs once Satchel is equipped");
+    bool bought_with_satchel = grind_action_buy_item(&w, ITEM_WATER_JUG, 5);
+    ASSERT_TRUE(bought_with_satchel, "Can carry 5 water jugs once Satchel is equipped");
 
     /* Verify encumbrance reduces walking speed when heavily loaded */
     float speed_loaded = grind_player_effective_move_speed(&w);

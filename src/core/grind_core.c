@@ -4,11 +4,11 @@
 
 static const GrindItemDef k_item_defs[ITEM_COUNT] = {
     /* ITEM_LEMON */          {"Lemon",              0.12f, 0.15f, 0.015f, 0.35f},
-    /* ITEM_SUGAR */          {"Sugar Pack",         0.50f, 0.50f, 0.001f, 0.60f},
-    /* ITEM_WATER_JUG */      {"Water Jug",          2.00f, 2.00f, 0.000f, 0.40f},
-    /* ITEM_PAPER_CUPS */     {"Paper Cups (5pk)",   0.08f, 0.30f, 0.000f, 0.25f},
+    /* ITEM_SUGAR */          {"Sugar Pack",         0.40f, 0.40f, 0.001f, 0.60f},
+    /* ITEM_WATER_JUG */      {"Water Jug",          1.50f, 1.50f, 0.000f, 0.40f},
+    /* ITEM_PAPER_CUPS */     {"Paper Cups (5pk)",   0.08f, 0.25f, 0.000f, 0.25f},
     /* ITEM_LEMONADE_CUP */   {"Fresh Lemonade",     0.35f, 0.35f, 0.060f, 1.50f},
-    /* ITEM_FOLDING_TABLE */  {"Folding Table",      3.50f, 3.00f, 0.000f, 4.00f},
+    /* ITEM_FOLDING_TABLE */  {"Folding Table",      2.00f, 1.80f, 0.000f, 4.00f},
     /* ITEM_FLYER_BUNDLE */   {"Flyer Bundle (20)",  0.40f, 0.40f, 0.000f, 3.00f},
     /* ITEM_STREET_SNACK */   {"Instant Noodles",    0.25f, 0.30f, 0.002f, 2.50f},
     /* ITEM_FRESH_MEAL */     {"Artisan Meal & Esp", 0.55f, 0.60f, 0.050f, 12.00f},

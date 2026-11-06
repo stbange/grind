@@ -42,33 +42,36 @@ int main(void) {
     printf("  -> Picked up $%.2f! Walking to Wholesale Market...\n", w.player.cash);
 
     bot_travel_to(&w, w.buildings[ZONE_WHOLESALE_MARKET].pos, 60.0f);
+    /* First trip: buy the Folding Table (2.0kg, 1.8L) and 1 starter batch of ingredients */
     grind_action_buy_item(&w, ITEM_FOLDING_TABLE, 1);
-    grind_action_buy_item(&w, ITEM_LEMON, 4);
-    grind_action_buy_item(&w, ITEM_SUGAR, 4);
+    grind_action_buy_item(&w, ITEM_LEMON, 1);
+    grind_action_buy_item(&w, ITEM_SUGAR, 1);
     grind_action_buy_item(&w, ITEM_WATER_JUG, 1);
-    grind_action_buy_item(&w, ITEM_PAPER_CUPS, 4);
+    grind_action_buy_item(&w, ITEM_PAPER_CUPS, 1);
 
     bot_travel_to(&w, w.buildings[ZONE_CENTRAL_PLAZA].pos, 60.0f);
     if (!grind_action_deploy_stand(&w)) {
         fprintf(stderr, "FAIL: Could not deploy lemonade stand.\n");
         return 1;
     }
+    grind_action_craft_lemonade(&w, 1);
 
     /* Grind the lemonade stand until player has >= $115 for Satchel ($25) + Bicycle ($85) */
     int guard = 0;
     while (w.player.cash < 120.0f && guard++ < 40) {
         if (w.player.stand_lemonade_stock < 5) {
             bot_travel_to(&w, w.buildings[ZONE_WHOLESALE_MARKET].pos, 60.0f);
-            grind_action_buy_item(&w, ITEM_LEMON, 3);
-            grind_action_buy_item(&w, ITEM_SUGAR, 3);
+            /* Bare hands can carry 2 batches (2 lemons, 2 sugar, 2 water jugs = 4.0kg/4.3L < 6kg/5L) */
+            grind_action_buy_item(&w, ITEM_LEMON, 2);
+            grind_action_buy_item(&w, ITEM_SUGAR, 2);
             grind_action_buy_item(&w, ITEM_WATER_JUG, 2);
-            grind_action_buy_item(&w, ITEM_PAPER_CUPS, 3);
+            grind_action_buy_item(&w, ITEM_PAPER_CUPS, 2);
             if (w.player.stamina < 40.0f && w.player.cash >= 5.0f) {
                 grind_action_buy_item(&w, ITEM_STREET_SNACK, 1);
                 grind_action_consume_item(&w, ITEM_STREET_SNACK);
             }
             bot_travel_to(&w, w.player.stand_pos, 60.0f);
-            grind_action_craft_lemonade(&w, 3);
+            grind_action_craft_lemonade(&w, 2);
         }
         /* Wait at stand serving customers */
         for (int t = 0; t < 12; ++t) {

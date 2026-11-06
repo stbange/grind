@@ -144,14 +144,7 @@ void grind_input_apply_to_world(GrindInputState *in, GrindWorld *world, float dt
     p->yaw_rad += in->look_yaw_delta;
     p->pitch_rad = grind_clampf(p->pitch_rad + in->look_pitch_delta, GRIND_DEG2RAD(-72.0f), GRIND_DEG2RAD(72.0f));
 
-    /* Smooth transition between First-Person 3D and Top-Down Management Map */
-    float target_t = (in->camera_mode == CAMERA_MODE_TOP_DOWN_MAP) ? 1.0f : 0.0f;
-    in->map_transition_t += (target_t - in->map_transition_t) * grind_clampf(dt_sec * 8.0f, 0.0f, 1.0f);
-
-    /* Apply player movement */
-    grind_player_move(world, in->move_forward, in->move_strafe, dt_sec);
-
-    /* Process contextual buttons */
+    /* Process contextual buttons (before camera transition lerp so mode changes apply immediately) */
     if (in->buttons[TOUCH_BTN_INTERACT].just_pressed) {
         grind_action_context_interact(world);
     }
@@ -174,6 +167,13 @@ void grind_input_apply_to_world(GrindInputState *in, GrindWorld *world, float dt
             grind_action_launch_marketing_campaign(world, 1);
         }
     }
+
+    /* Smooth transition between First-Person 3D and Top-Down Management Map */
+    float target_t = (in->camera_mode == CAMERA_MODE_TOP_DOWN_MAP) ? 1.0f : 0.0f;
+    in->map_transition_t += (target_t - in->map_transition_t) * grind_clampf(dt_sec * 8.0f, 0.0f, 1.0f);
+
+    /* Apply player movement */
+    grind_player_move(world, in->move_forward, in->move_strafe, dt_sec);
 }
 
 Mat4 grind_input_compute_view_matrix(const GrindInputState *in, const GrindWorld *world) {
